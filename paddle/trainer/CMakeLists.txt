@@ -7,7 +7,6 @@ set(TRAINER_SOURCES
         Tester.cpp
         Trainer.cpp
         TrainerInternal.cpp
-        TrainerBenchmark.cpp
         ThreadParameterUpdater.cpp
         TrainerInternalConfig.cpp
         TrainerConfigHelper.cpp)

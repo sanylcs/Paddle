@@ -22,9 +22,7 @@ namespace paddle {
 
 using namespace std;
 
-MultiDataProvider::MultiDataProvider(const DataConfig& config,
-                                     const ModelConfig& modelConfig,
-                                     bool useGpu)
+MultiDataProvider::MultiDataProvider(const DataConfig& config, bool useGpu)
     : DataProvider(config, useGpu) {
   bool atLeastOneMainDataFlag = false;
   totalDataRatio_ = 0;
@@ -60,9 +58,7 @@ MultiDataProvider::MultiDataProvider(const DataConfig& config,
       subConfig.set_async_load_data(false);
     }
     subDataProviders_[i] =
-        std::unique_ptr<DataProvider>(DataProvider::create(subConfig,
-                                                           modelConfig,
-                                                           useGpu_));
+        std::unique_ptr<DataProvider>(DataProvider::create(subConfig, useGpu_));
   }
 }
 
@@ -120,6 +116,6 @@ int64_t MultiDataProvider::getNextBatchInternal(int64_t size,
   return batch->getSize();
 }
 
-REGISTER_DATA_PROVIDER_EX(multi, MultiDataProvider);
+REGISTER_DATA_PROVIDER(multi, MultiDataProvider);
 
 }  // namespace paddle

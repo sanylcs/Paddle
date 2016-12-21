@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 """
 config_generator.py
 
@@ -28,7 +29,10 @@ import json
 import docopt
 import copy
 
-DEFAULT_FILE = {"type": "split", "delimiter": ","}
+DEFAULT_FILE = {
+    "type": "split",
+    "delimiter": ","
+}
 
 DEFAULT_FIELD = {
     "id": {
@@ -103,16 +107,19 @@ def main(filename, fmt):
                 field = copy.deepcopy(DEFAULT_FIELD[field_key])
                 field['pos'] = pos
                 fields.append(field)
-            obj[k] = {"file": file_dict, "fields": fields}
-    meta = {"meta": obj}
+            obj[k] = {
+                "file": file_dict,
+                "fields": fields
+            }
+    meta = {
+        "meta": obj
+    }
     # print meta
     if fmt == 'json':
-
         def formatter(x):
             import json
             return json.dumps(x, indent=2)
     elif fmt == 'yaml':
-
         def formatter(x):
             import yaml
             return yaml.safe_dump(x, default_flow_style=False)

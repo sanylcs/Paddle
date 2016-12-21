@@ -17,12 +17,11 @@ from paddle.trainer.config_parser import Settings, default_decay_rate, \
 
 from .default_decorators import wrap_param_default
 
-__all__ = [
-    'Optimizer', 'BaseSGDOptimizer', 'MomentumOptimizer', 'AdamaxOptimizer',
-    'AdamOptimizer', 'AdaGradOptimizer', 'RMSPropOptimizer',
-    'DecayedAdaGradOptimizer', 'AdaDeltaOptimizer', 'BaseRegularization',
-    'L2Regularization', 'settings', 'ModelAverage'
-]
+__all__ = ['Optimizer', 'BaseSGDOptimizer', 'MomentumOptimizer',
+           'AdamaxOptimizer', 'AdamOptimizer', 'AdaGradOptimizer',
+           'RMSPropOptimizer', 'DecayedAdaGradOptimizer',
+           'AdaDeltaOptimizer', 'BaseRegularization', 'L2Regularization',
+           'settings', 'ModelAverage']
 
 
 class Optimizer(object):
@@ -72,38 +71,16 @@ class BaseSGDOptimizer(Optimizer):
 
 
 class MomentumOptimizer(BaseSGDOptimizer):
-    """
-    MomentumOptimizer.
-
-    When sparse=True, the update scheme:
-
-    ..  math::
-
-        \\alpha_t &= \\alpha_{t-1} / k \\\\
-        \\beta_t &= \\beta_{t-1} / (1 + \\lambda \\gamma_t) \\\\
-        u_t &= u_{t-1} - \\alpha_t \\gamma_t g_t \\\\
-        v_t &= v_{t-1} + \\tau_{t-1} \\alpha_t \\gamma_t g_t \\\\
-        \\tau_t &= \\tau_{t-1} + \\beta_t / \\alpha_t
-    
-    where :math:`k` is momentum, :math:`\\lambda` is decay rate, 
-    :math:`\\gamma_t` is learning rate at the t'th step.
-
-    :param sparse: with sparse support or not.
-    :type sparse: bool
-    """
-
     def extra_settings(self):
         default_momentum(self.momentum)
 
     def to_setting_kwargs(self):
-        if self.sparse:
-            return {'learning_method': 'sparse_momentum'}
-        else:
-            return {'learning_method': 'momentum'}
+        return {
+            'learning_method': 'momentum'
+        }
 
-    def __init__(self, momentum=None, sparse=False):
+    def __init__(self, momentum=1e-3):
         self.momentum = momentum
-        self.sparse = sparse
 
 
 class AdamOptimizer(BaseSGDOptimizer):
@@ -195,7 +172,9 @@ class AdaGradOptimizer(BaseSGDOptimizer):
     """
 
     def to_setting_kwargs(self):
-        return {'learning_method': 'adagrad'}
+        return {
+            'learning_method': 'adagrad'
+        }
 
     def __init__(self):
         pass
@@ -307,7 +286,9 @@ class L2Regularization(BaseRegularization):
 
     def to_setting_kwargs(self):
         if self.algorithm == 'owlqn':
-            return {'l2weight': self.decay_rate}
+            return {
+                'l2weight': self.decay_rate
+            }
         else:
             return dict()
 
@@ -324,8 +305,7 @@ class ModelAverage(Optimizer):
             'do_average_in_cpu': self.do_average_in_cpu
         }
 
-    def __init__(self,
-                 average_window,
+    def __init__(self, average_window,
                  max_average_window=None,
                  do_average_in_cpu=False):
         self.average_window = average_window
@@ -351,24 +331,18 @@ def __extends__(dict1, dict2):
     return dict1
 
 
-@wrap_param_default(
-    ['learning_method'], default_factory=lambda _: MomentumOptimizer())
-@wrap_param_default(
-    ['regularization'], default_factory=lambda _: BaseRegularization())
+@wrap_param_default(['learning_method'],
+                    default_factory=lambda _: MomentumOptimizer())
+@wrap_param_default(['regularization'],
+                    default_factory=lambda _: BaseRegularization())
 def settings(batch_size,
              learning_rate=1e-3,
-             learning_rate_decay_a=0.,
-             learning_rate_decay_b=0.,
-             learning_rate_schedule='poly',
-             learning_rate_args='',
-             average_window=0,
-             do_average_in_cpu=False,
-             max_average_window=None,
              learning_method=None,
              regularization=None,
              is_async=False,
              model_average=None,
-             gradient_clipping_threshold=None):
+             gradient_clipping_threshold=None
+             ):
     """
     Set the optimization method, learning rate, batch size, and other training
     settings. The currently supported algorithms are SGD and Async-SGD.
@@ -409,15 +383,10 @@ def settings(batch_size,
     else:
         algorithm = 'owlqn'
 
-    args = [
-        'batch_size', 'learning_rate', 'learning_rate_decay_a',
-        'learning_rate_decay_b', 'learning_rate_schedule', 'learning_rate_args',
-        'average_window', 'do_average_in_cpu', 'max_average_window'
-    ]
     kwargs = dict()
+    kwargs['batch_size'] = batch_size
+    kwargs['learning_rate'] = learning_rate
     kwargs['algorithm'] = algorithm
-    for arg in args:
-        kwargs[arg] = locals()[arg]
 
     kwargs = __extends__(kwargs, learning_method.to_setting_kwargs())
     learning_method.extra_settings()

@@ -30,9 +30,7 @@ namespace hppl {
   }
 
   real tanh(const real a) {
-    real tmp = -2.0 * a;
-    tmp = (tmp > EXP_MAX_INPUT) ? EXP_MAX_INPUT : tmp;
-    return (2.0 / (1.0 + exp(tmp))) - 1.0;
+    return (2.0 / (1.0 + exp(-2.0*a))) - 1.0;
   }
 
   real linear(const real a) {

@@ -277,7 +277,6 @@ void NeuralNetwork::getState(MachineState& machineState) {
 }
 
 void NeuralNetwork::backward(const UpdateCallback& callback) {
-  gLayerStackTrace.pop("");  // tell layer trace is during backward.
   FOR_EACH_R(layer, layers_) {
     REGISTER_TIMER_INFO("BackwardTimer", (*layer)->getName().c_str());
     if ((*layer)->needGradient()) {
@@ -385,17 +384,17 @@ void NeuralNetwork::setOutputGrad(const std::vector<Argument>& args) {
   }
 }
 
-extern NeuralNetwork* newCustomNerualNetwork(
-  const std::string& name, NeuralNetwork* network) __attribute__((weak));
+extern NeuralNetwork* newCustomNeuralNetwork(
+    const std::string& name, NeuralNetwork* network) __attribute__((weak));
 
 NeuralNetwork* NeuralNetwork::newNeuralNetwork(
     const std::string& name,
     NeuralNetwork* rootNetwork) {
-    if (newCustomNerualNetwork) {
-      return newCustomNerualNetwork(name, rootNetwork);
-    } else {
-      return new NeuralNetwork(name, rootNetwork);
-    }
+  if (newCustomNeuralNetwork) {
+    return newCustomNeuralNetwork(name, rootNetwork);
+  } else {
+    return new NeuralNetwork(name, rootNetwork);
+  }
 }
 
 }  // namespace paddle

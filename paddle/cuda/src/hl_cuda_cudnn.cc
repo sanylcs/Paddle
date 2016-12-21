@@ -20,11 +20,6 @@ limitations under the License. */
 #include "hl_thread.ph"
 #include "hl_dso_loader.h"
 #include "paddle/utils/Logging.h"
-#include "paddle/utils/CommandLineParser.h"
-
-P_DEFINE_int32(cudnn_conv_workspace_limit_in_mb, 4096,
-                "Specify cuDNN max workspace limit, in units MB, "
-                "4096MB=4GB by default.");
 
 namespace dynload {
 
@@ -41,27 +36,64 @@ void* cudnn_dso_handle = nullptr;
 
 #ifdef PADDLE_USE_DSO
 
-#define DYNAMIC_LOAD_CUDNN_WRAP(__name)                          \
-  struct DynLoad__##__name {                                     \
-    template <typename... Args>                                  \
-    auto operator()(Args... args) -> decltype(__name(args...)) { \
-      using cudnn_func = decltype(__name(args...))(*)(Args...);  \
-      std::call_once(cudnn_dso_flag, GetCudnnDsoHandle,          \
-                     &cudnn_dso_handle);                         \
-      void* p_##__name = dlsym(cudnn_dso_handle, #__name);       \
-      return reinterpret_cast<cudnn_func>(p_##__name)(args...);  \
-    }                                                            \
+#define DYNAMIC_LOAD_CUDNN_WRAP(__name)                         \
+  struct DynLoad__##__name {                                    \
+    template <typename... Args>                                 \
+    cudnnStatus_t operator()(Args... args) {                    \
+      typedef cudnnStatus_t (*cudnnFunc)(Args...);              \
+      std::call_once(cudnn_dso_flag, GetCudnnDsoHandle,         \
+                     &cudnn_dso_handle);                        \
+      void* p_##__name = dlsym(cudnn_dso_handle, #__name);      \
+      return reinterpret_cast<cudnnFunc>(p_##__name)(args...);  \
+    }                                                           \
   } __name; /* struct DynLoad__##__name */
+
+struct DynLoad__cudnnGetVersion {
+  template <typename... Args>
+  size_t operator()(Args... args) {
+    typedef size_t (*cudnnFunc)(Args...);
+    std::call_once(cudnn_dso_flag, GetCudnnDsoHandle,
+                   &cudnn_dso_handle);
+    void* p_name = dlsym(cudnn_dso_handle, "cudnnGetVersion");
+    return reinterpret_cast<cudnnFunc>(p_name)(args...);
+  }
+} cudnnGetVersion; /* struct DynLoad__##__name */
+
+struct DynLoad__cudnnGetErrorString {
+  template <typename... Args>
+  const char* operator()(Args... args) {
+    typedef const char* (*cudnnFunc)(Args...);
+    std::call_once(cudnn_dso_flag, GetCudnnDsoHandle,
+                   &cudnn_dso_handle);
+    void* p_name = dlsym(cudnn_dso_handle, "cudnnGetErrorString");
+    return reinterpret_cast<cudnnFunc>(p_name)(args...);
+  }
+} cudnnGetErrorString; /* struct DynLoad__##__name */
+
 
 #else
 
-#define DYNAMIC_LOAD_CUDNN_WRAP(__name)                          \
-  struct DynLoad__##__name {                                     \
-    template <typename... Args>                                  \
-    auto operator()(Args... args) -> decltype(__name(args...)) { \
-      return __name(args...);                                    \
-    }                                                            \
+#define DYNAMIC_LOAD_CUDNN_WRAP(__name)                         \
+  struct DynLoad__##__name {                                    \
+    template <typename... Args>                                 \
+    cudnnStatus_t operator()(Args... args) {                    \
+      return __name(args...);                                   \
+    }                                                           \
   } __name; /* struct DynLoad__##__name */
+
+struct DynLoad__cudnnGetVersion {
+  template <typename... Args>
+  size_t operator()(Args... args) {
+    return cudnnGetVersion(args...);
+  }
+} cudnnGetVersion; /* struct DynLoad__##__name */
+
+struct DynLoad__cudnnGetErrorString {
+  template <typename... Args>
+  const char* operator()(Args... args) {
+    return cudnnGetErrorString(args...);
+  }
+} cudnnGetErrorString; /* struct DynLoad__##__name */
 
 #endif
 
@@ -96,9 +128,7 @@ void* cudnn_dso_handle = nullptr;
   __macro(cudnnPoolingForward)                            \
   __macro(cudnnPoolingBackward)                           \
   __macro(cudnnSoftmaxBackward)                           \
-  __macro(cudnnSoftmaxForward)                            \
-  __macro(cudnnGetVersion)                                \
-  __macro(cudnnGetErrorString)
+  __macro(cudnnSoftmaxForward)
 CUDNN_DNN_ROUTINE_EACH(DYNAMIC_LOAD_CUDNN_WRAP)
 
 #define CUDNN_DNN_ROUTINE_EACH_R2(__macro)                \
@@ -120,7 +150,7 @@ CUDNN_DNN_ROUTINE_EACH_AFTER_R3(DYNAMIC_LOAD_CUDNN_WRAP)
 
 
 // APIs available after R4:
-#if CUDNN_VERSION >= 4007
+#if CUDNN_VERSION >= 4000
 #define CUDNN_DNN_ROUTINE_EACH_AFTER_R4(__macro)             \
   __macro(cudnnBatchNormalizationForwardTraining)            \
   __macro(cudnnBatchNormalizationForwardInference)           \
@@ -212,7 +242,7 @@ void hl_conv_workspace(hl_tensor_descriptor input,
     CHECK_NOTNULL(conv);
 
     // Specify workspace limit directly
-    size_t memoryLimitBytes = (1LL << 20) * FLAGS_cudnn_conv_workspace_limit_in_mb;
+    size_t memoryLimitBytes = 8 * 1024 * 1024;
 
     // cudnn convolution forward configuration
     cudnnTensorDescriptor_t       fwd_src_desc = GET_TENSOR_DESCRIPTOR(input);
@@ -310,7 +340,7 @@ void hl_create_tensor_descriptor(hl_tensor_descriptor* image_desc,
         (cudnn_tensor_descriptor)malloc(sizeof(_cudnn_tensor_descriptor));
     CHECK_NOTNULL(hl_desc);
 
-#ifndef PADDLE_TYPE_DOUBLE
+#ifndef HPPL_TYPE_DOUBLE
     cudnnDataType_t data_type = CUDNN_DATA_FLOAT;
 #else
     cudnnDataType_t data_type = CUDNN_DATA_DOUBLE;
@@ -343,7 +373,7 @@ void hl_create_tensor_descriptor(hl_tensor_descriptor* image_desc) {
         (cudnn_tensor_descriptor)malloc(sizeof(_cudnn_tensor_descriptor));
     CHECK_NOTNULL(hl_desc);
 
-#ifndef PADDLE_TYPE_DOUBLE
+#ifndef HPPL_TYPE_DOUBLE
     cudnnDataType_t data_type = CUDNN_DATA_FLOAT;
 #else
     cudnnDataType_t data_type = CUDNN_DATA_DOUBLE;
@@ -581,7 +611,7 @@ void hl_create_filter_descriptor(hl_filter_descriptor* filter,
 
     CHECK_CUDNN(dynload::cudnnCreateFilterDescriptor(&hl_filter->desc));
 
-#ifndef PADDLE_TYPE_DOUBLE
+#ifndef HPPL_TYPE_DOUBLE
     cudnnDataType_t data_type = CUDNN_DATA_FLOAT;
 #else
     cudnnDataType_t data_type = CUDNN_DATA_DOUBLE;
@@ -891,7 +921,7 @@ void hl_softmax_forward(real *input,
                         int height,
                         int width)
 {
-#ifndef PADDLE_TYPE_DOUBLE
+#ifndef HPPL_TYPE_DOUBLE
     cudnnDataType_t data_type = CUDNN_DATA_FLOAT;
 #else
     cudnnDataType_t data_type = CUDNN_DATA_DOUBLE;
@@ -925,7 +955,7 @@ void hl_softmax_backward(real *output_value,
                          int height,
                          int width)
 {
-#ifndef PADDLE_TYPE_DOUBLE
+#ifndef HPPL_TYPE_DOUBLE
     cudnnDataType_t data_type = CUDNN_DATA_FLOAT;
 #else
     cudnnDataType_t data_type = CUDNN_DATA_DOUBLE;
@@ -969,7 +999,7 @@ void hl_batch_norm_forward_training(hl_tensor_descriptor inputDesc,
                                     double epsilon,
                                     real *savedMean,
                                     real *savedVar) {
-#if CUDNN_VERSION >= 4007
+#if CUDNN_VERSION >= 4000
   if ((NULL != runningMean && NULL == runningInvVar) ||
       (NULL == runningMean && NULL != runningInvVar)) {
     LOG(FATAL) << "runningMean and runningInvVar can be NULL "
@@ -994,7 +1024,7 @@ void hl_batch_norm_forward_training(hl_tensor_descriptor inputDesc,
 
   CHECK_SYNC("hl_batch_norm_forward_training failed");
 #else
-  LOG(FATAL) << "CudnnBatchNorm requires cudnn version >= 4007. "
+  LOG(FATAL) << "CudnnBatchNorm requires cudnn version >= 4000. "
              << "But cudnn lib version is " << g_cudnn_lib_version;
 #endif
 }
@@ -1009,7 +1039,7 @@ void hl_batch_norm_forward_inference(hl_tensor_descriptor inputDesc,
                                     real *estimatedMean,
                                     real *estimatedInvVar,
                                     double epsilon) {
-#if CUDNN_VERSION >= 4007
+#if CUDNN_VERSION >= 4000
   cudnnTensorDescriptor_t xDesc = GET_TENSOR_DESCRIPTOR(inputDesc);
   cudnnTensorDescriptor_t yDesc = GET_TENSOR_DESCRIPTOR(outputDesc);
   cudnnTensorDescriptor_t bnDesc = GET_TENSOR_DESCRIPTOR(bnParamDesc);
@@ -1023,7 +1053,7 @@ void hl_batch_norm_forward_inference(hl_tensor_descriptor inputDesc,
 
   CHECK_SYNC("hl_batch_norm_forward_inference failed");
 #else
-  LOG(FATAL) << "CudnnBatchNorm requires cudnn version >= 4007. "
+  LOG(FATAL) << "CudnnBatchNorm requires cudnn version >= 4000. "
              << "But cudnn lib version is " << g_cudnn_lib_version;
 #endif
 }
@@ -1041,7 +1071,7 @@ void hl_batch_norm_backward(hl_tensor_descriptor inputDesc,
                             double epsilon,
                             real *savedMean,
                             real *savedInvVar) {
-#if CUDNN_VERSION >= 4007
+#if CUDNN_VERSION >= 4000
   if ((NULL != savedMean && NULL == savedInvVar) ||
       (NULL == savedMean && NULL != savedInvVar)) {
     LOG(FATAL) << "savedMean and savedVar can be NULL "
@@ -1057,14 +1087,16 @@ void hl_batch_norm_backward(hl_tensor_descriptor inputDesc,
   cudnnBatchNormMode_t mode = CUDNN_BATCHNORM_SPATIAL;
   CHECK_CUDNN(dynload::cudnnBatchNormalizationBackward(
               t_resource.cudnn_handle, mode, &alpha, &beta,
+#if CUDNN_VERSION >= 5000
               &alpha, &beta,
+#endif
               xDesc, input, dyDesc, outGrad, dxDesc, inGrad,
               bnDesc, scale, scaleGrad, biasGrad, epsilon,
               savedMean, savedInvVar));
 
   CHECK_SYNC("hl_batch_norm_backward failed");
 #else
-  LOG(FATAL) << "CudnnBatchNorm requires cudnn version >= 4007. "
+  LOG(FATAL) << "CudnnBatchNorm requires cudnn version >= 4000. "
              << "But cudnn lib version is " << g_cudnn_lib_version;
 #endif
 }

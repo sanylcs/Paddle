@@ -97,8 +97,7 @@ void ConcatenateLayer::backward(const UpdateCallback& callback) {
  */
 class ConcatenateLayer2 : public Layer {
 public:
-  explicit ConcatenateLayer2(const LayerConfig& config) :
-      Layer(config) {}
+  explicit ConcatenateLayer2(const LayerConfig& config) : Layer(config) {}
 
   ~ConcatenateLayer2() {}
 
@@ -111,8 +110,6 @@ protected:
   std::vector<std::unique_ptr<Projection>> projections_;
   std::vector<Argument> projOutput_;
   std::vector<std::pair<size_t, size_t>> projCol_;
-  bool sharedBias_;
-  std::unique_ptr<Weight> biases_;
 };
 
 REGISTER_LAYER(concat2, ConcatenateLayer2);
@@ -122,6 +119,7 @@ bool ConcatenateLayer2::init(const LayerMap& layerMap,
   /* Initialize the basic parent class */
   if (!Layer::init(layerMap, parameterMap)) return false;
 
+  CHECK(!biasParameter_);
   CHECK_EQ(inputLayers_.size(), parameters_.size());
   projections_.reserve(inputLayers_.size());
   projCol_.reserve(inputLayers_.size());
@@ -139,13 +137,6 @@ bool ConcatenateLayer2::init(const LayerMap& layerMap,
   }
   CHECK_EQ(getSize(), endCol);
 
-  /* initialize biases_ */
-  if (biasParameter_.get() != NULL) {
-    sharedBias_ = config_.shared_biases();
-    size_t psize = config_.bias_size();
-    biases_ = std::unique_ptr<Weight>(new Weight(1, psize, biasParameter_));
-  }
-
   return true;
 }
 
@@ -160,22 +151,11 @@ void ConcatenateLayer2::forward(PassType passType) {
     size_t startCol = projCol_[i].first;
     size_t endCol = projCol_[i].second;
     projOutput_[i].value = output_.value->subColMatrix(startCol, endCol);
-    if (output_.grad) {
-      projOutput_[i].grad = output_.grad->subColMatrix(startCol, endCol);
-    }
+    projOutput_[i].grad = output_.grad->subColMatrix(startCol, endCol);
   }
 
-  {
-    AsyncGpuBlock block;
-    for (size_t i = 0; i != inputLayers_.size(); ++i) {
-      projections_[i]->forward(&getInput(i), &projOutput_[i], passType);
-    }
-  }
-
-  /* add the bias-vector */
-  if (biases_) {
-    REGISTER_TIMER_INFO("FwBiasTimer", getName().c_str());
-    output_.value->addBias(*(biases_->getW()), 1, sharedBias_);
+  for (size_t i = 0; i != inputLayers_.size(); ++i) {
+    projections_[i]->forward(&getInput(i), &projOutput_[i], passType);
   }
 
   /* activation */ {
@@ -188,13 +168,6 @@ void ConcatenateLayer2::backward(const UpdateCallback& callback) {
   /* Do activation */ {
     REGISTER_TIMER_INFO("BpAvtTimer", getName().c_str());
     backwardActivation();
-  }
-
-  AsyncGpuBlock block;
-  if (biases_ && biases_->getWGrad()) {
-    REGISTER_TIMER_INFO("Concat2BpBiasTimer", getName().c_str());
-    biases_->getWGrad()->collectBias(*getOutputGrad(), 1, sharedBias_);
-    biases_->getParameterPtr()->incUpdate(callback);
   }
 
   for (size_t i = 0; i != inputLayers_.size(); ++i) {

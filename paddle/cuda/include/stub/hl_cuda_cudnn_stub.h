@@ -199,3 +199,4 @@ inline void hl_batch_norm_backward(hl_tensor_descriptor inputDesc,
                                    real *savedInvVar) {}
 
 #endif  // HL_CUDA_CUDNN_STUB_H_
+

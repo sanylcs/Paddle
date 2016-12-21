@@ -24,9 +24,7 @@ protected:
   std::vector<std::unique_ptr<DataProvider>> subDataProviders_;
 
 public:
-  MultiDataProvider(const DataConfig& config,
-                    const ModelConfig& modelConfig,
-                    bool useGpu);
+  MultiDataProvider(const DataConfig& config, bool useGpu);
   ~MultiDataProvider() {}
   virtual void reset();
   virtual void shuffle();

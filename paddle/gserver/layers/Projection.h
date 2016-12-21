@@ -12,11 +12,12 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
+
 #pragma once
 
-#include "Layer.h"
-#include "ModelConfig.pb.h"
 #include "paddle/parameter/Parameter.h"
+#include "ModelConfig.pb.h"
+#include "Layer.h"
 
 namespace paddle {
 
@@ -25,11 +26,6 @@ namespace paddle {
 #define REGISTER_PROJECTION(__type_name, __class_name)                \
   static InitFunction __reg_type_##__type_name([]() {                 \
     Projection::registrar_.registerClass<__class_name>(#__type_name); \
-  })
-
-#define REGISTER_PROJECTION_CREATE_FUNC(__type_name, createFunction)    \
-  static InitFunction __reg_type_##__type_name([]() {                   \
-    Projection::registrar_.registerClass(#__type_name, createFunction); \
   })
 
 /**
@@ -54,8 +50,7 @@ public:
       registrar_;
 
   /**
-   * Forward propagation. If backward() will be called, in and out must be kept
-   * valid until then.
+   * Forward propagation. If backward() will be called, in and out must be kept valid until then.
    * @param in input of projection
    * @param out output of projection
    * @param passType PASS_TRAIN of PASS_TEST

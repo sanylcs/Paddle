@@ -37,8 +37,6 @@ class BaseVector;
 
 class SyncThreadPool;
 
-class Matrix;
-
 template<class T>
 class BaseVector : public BaseMatrixT<T> {
 public:
@@ -156,12 +154,6 @@ public:
   void subVecFrom(const VectorT<T>& src, std::pair<size_t, size_t> interval) {
     subVecFrom(src, interval.first, interval.second - interval.first);
   }
-
-  /**
-   * convert the vector to a sparse one_hot matrix of width idRange
-   * only applies to IVector
-   */
-  std::shared_ptr<Matrix> toOneHotSparseMatrix(size_t idRange, bool useGpu);
 
   /**
    * This function will crash if the size of src and dest is different.

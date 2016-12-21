@@ -299,6 +299,7 @@ void checkRecurrentLayer(LayerConfig layerConfig, size_t batchSize,
   Argument& cpuInput = testCpu.dataLayer_->getOutput();
   Argument& gpuInput = testGpu.dataLayer_->getOutput();
   gpuInput.resizeAndCopyFrom(cpuInput, true);
+  hl_stream_synchronize(HPPL_STREAM_DEFAULT);
 
   const VectorPtr& cpuVec = testCpu.para_->getBuf(PARAMETER_VALUE);
   const VectorPtr& gpuVec = testGpu.para_->getBuf(PARAMETER_VALUE);
@@ -369,7 +370,7 @@ TEST(Layer, LstmLayer) {
   LayerConfig layerConfig;
   layerConfig.set_type("lstmemory");
   layerConfig.set_active_type("relu");
-  layerConfig.set_active_state_type("tanh");
+  layerConfig.set_active_state_type("sigmoid");
   layerConfig.set_active_gate_type("sigmoid");
 
   layerConfig.add_inputs();

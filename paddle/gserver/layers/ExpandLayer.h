@@ -44,9 +44,14 @@ protected:
   enum ExpandLevel { kNonSeq = 0, kSeq = 1 };
   /// store the ExpandLevel
   int type_;
+  // TODO(luotao) use ICpuGpuVectorPtr to merge cpuExpandStartsPos_
+  // and expandStartsPos_
   /// expanded sequenceStartPositions or subSequenceStartPositions
   /// of input[1]
-  ICpuGpuVectorPtr expandStartsPos_;
+  IVectorPtr cpuExpandStartsPos_;
+  /// point to cpuExpandStartsPos_ when useGpu_ is false,
+  /// copy from cpuExpandStartsPos_ when useGpu_ is true
+  IVectorPtr expandStartsPos_;
 
 public:
   explicit ExpandLayer(const LayerConfig& config) : Layer(config) {}

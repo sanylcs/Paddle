@@ -13,9 +13,12 @@ See the License for the specific language governing permissions and
 limitations under the License. */
 
 #pragma once
-#include "Util.h"
 #include "Logging.h"
 #include <thread>
+
+#include <sys/syscall.h>
+#include <unistd.h>
+inline pid_t gettid() { return syscall(SYS_gettid); }
 
 #include "Queue.h"
 #include "ThreadLocal.h"
@@ -172,7 +175,7 @@ public:
         jobFinishBarrier_(numWorkers + 1),
         jobFunc_(nullptr),
         checkOwner_(checkOwner) {
-    ownerThreadId_ = getTID();
+    ownerThreadId_ = ::gettid();
     workers_.resize(numWorkers);
     start();
   }
@@ -196,7 +199,7 @@ public:
    */
   void exec(JobFunc jobFunc, JobFunc ownerFunc = nullptr) {
     if (checkOwner_) {
-      CHECK_EQ(ownerThreadId_, getTID())
+      CHECK_EQ(ownerThreadId_, ::gettid())
           << "this sync thread pool should be used in one thread";
     }
 

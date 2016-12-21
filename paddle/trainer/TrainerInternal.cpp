@@ -55,8 +55,6 @@ void TrainerInternal::init(const std::shared_ptr<TrainerConfigHelper> &config,
 
     gradientMachine_ = gradientMachine;
     if (!gradientMachine) {
-      CHECK(config_->getConfig().has_model_config())
-          << "Missing model_config in trainer_config";
       gradientMachine_.reset(GradientMachine::create(
         config_->getConfig().model_config(), intconfig_->mode,
         parameterUpdater_->getParameterTypes()));
@@ -64,8 +62,7 @@ void TrainerInternal::init(const std::shared_ptr<TrainerConfigHelper> &config,
 }
 
 void TrainerInternal::trainOneBatch(int64_t batchId,
-                                    const DataBatch& dataBatch,
-                                    std::vector<Argument>* outArgs) {
+                                    const DataBatch& dataBatch) {
   // true means updating parameter whenever gradient is ready during backward()
   bool doPipelineUpdate =
       (intconfig_->mode != GradientMachine::kSgdSparseCpuTraining) &&
@@ -87,6 +84,7 @@ void TrainerInternal::trainOneBatch(int64_t batchId,
   }
 
   const std::vector<Argument>& inArgs = dataBatch.getStreams();
+  std::vector<Argument> outArgs;
 
   PassType passType = parameterUpdater_->startBatch(actualBatchSize);
 
@@ -103,7 +101,6 @@ void TrainerInternal::trainOneBatch(int64_t batchId,
       // it
       //! to ParameterHook.
       auto& grad = para->getBuf(PARAMETER_GRADIENT);
-      SetDevice device(para->getDeviceId());
       paraStats[para->getID()].avgAbsGrad = grad->getAbsSum() / para->getSize();
       paraStats[para->getID()].maxAbsGrad = grad->getAbsMax();
     }
@@ -116,7 +113,7 @@ void TrainerInternal::trainOneBatch(int64_t batchId,
     timer.start();
 #endif
     REGISTER_TIMER("forwardBackward");
-    forwardBackwardBatch(inArgs, *outArgs, passType, updateCallback,
+    forwardBackwardBatch(inArgs, outArgs, passType, updateCallback,
                          doPipelineUpdate);
 #ifndef PADDLE_DISABLE_TIMER
     timer.stop();
@@ -134,7 +131,7 @@ void TrainerInternal::trainOneBatch(int64_t batchId,
   real cost = 0;
   {
     REGISTER_TIMER("sumCost");
-    cost = Argument::sumCosts(*outArgs);
+    cost = Argument::sumCosts(outArgs);
   }
 
   if (batchId % intconfig_->log_period == 0) {

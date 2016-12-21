@@ -12,6 +12,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
+
 #include "ExpandLayer.h"
 #include "paddle/utils/Logging.h"
 #include "paddle/utils/Stat.h"
@@ -52,8 +53,9 @@ void ExpandLayer::forward(PassType passType) {
   const Argument& shapeInput = getInput(1);
   const Argument& dataInput = getInput(0);
   size_t outputBatchSize = shapeInput.getBatchSize();
-  auto startPositions = type_ ? shapeInput.subSequenceStartPositions
-                              : shapeInput.sequenceStartPositions;
+  auto startPositions =
+      type_ ? shapeInput.subSequenceStartPositions
+            : shapeInput.sequenceStartPositions;
   size_t numSequences = startPositions->getSize() - 1;
   const int* starts = startPositions->getData(false);
 
@@ -69,7 +71,8 @@ void ExpandLayer::forward(PassType passType) {
   // set output sequence info as shape sequence
   output_.sequenceStartPositions = shapeInput.sequenceStartPositions;
   if (shapeInput.hasSubseq()) {
-    output_.subSequenceStartPositions = shapeInput.subSequenceStartPositions;
+    output_.subSequenceStartPositions =
+        shapeInput.subSequenceStartPositions;
   }
 
   // reserve output: Expand output to batchsize of sequence data.
@@ -78,8 +81,8 @@ void ExpandLayer::forward(PassType passType) {
   MatrixPtr inputValue = getInputValue(0);
   MatrixPtr outputValue = getOutputValue();
 
-  ICpuGpuVector::resizeOrCreate(expandStartsPos_, outputBatchSize, false);
-  int* expandStarts = expandStartsPos_->getMutableData(false);
+  IVector::resizeOrCreate(cpuExpandStartsPos_, outputBatchSize, false);
+  int* expandStarts = cpuExpandStartsPos_->getData();
   for (size_t sequenceId = 0; sequenceId < numSequences; ++sequenceId) {
     int sequenceLength = starts[sequenceId + 1] - starts[sequenceId];
     for (int j = 0; j < sequenceLength; j++) {
@@ -87,8 +90,15 @@ void ExpandLayer::forward(PassType passType) {
     }
   }
 
-  outputValue->copyByRowIndex(*inputValue,
-                              *expandStartsPos_->getVector(useGpu_));
+  if (useGpu_) {
+    // TODO(Dangqingqing) move copyFrom
+    IVector::resizeOrCreate(expandStartsPos_, outputBatchSize, true);
+    expandStartsPos_->copyFrom(*cpuExpandStartsPos_, HPPL_STREAM_DEFAULT);
+  } else {
+    expandStartsPos_ = cpuExpandStartsPos_;
+  }
+
+  outputValue->copyByRowIndex(*inputValue, *expandStartsPos_);
 
   if (biases_.get() != NULL) {
     outputValue->addBias(*(biases_->getW()), 1);
@@ -98,15 +108,16 @@ void ExpandLayer::forward(PassType passType) {
 void ExpandLayer::backward(const UpdateCallback& callback) {
   if (biases_ && biases_->getWGrad()) {
     biases_->getWGrad()->collectBias(*getOutputGrad(), 1);
-    /* Increasing the number of gradient */
+     /* Increasing the number of gradient */
     biases_->getParameterPtr()->incUpdate(callback);
   }
 
   if (!getInputGrad(0)) return;
   MatrixPtr inputGrad = getInputGrad(0);
   MatrixPtr outputGrad = getOutputGrad();
-  auto cpuSeqStartPos = type_ ? getInput(1).subSequenceStartPositions
-                              : getInput(1).sequenceStartPositions;
+  auto cpuSeqStartPos =
+      type_ ? getInput(1).subSequenceStartPositions
+            : getInput(1).sequenceStartPositions;
   size_t numSequences = cpuSeqStartPos->getSize() - 1;
   const int* starts = cpuSeqStartPos->getData(false);
 

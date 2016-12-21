@@ -12,6 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+try:
+    import cPickle as pickle
+except ImportError:
+    import pickle
+
 from paddle.trainer.PyDataProvider2 import *
 import common_utils  # parse
 

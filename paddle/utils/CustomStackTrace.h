@@ -15,9 +15,6 @@ limitations under the License. */
 #pragma once
 
 #include <stack>
-#include <thread>
-#include <unordered_map>
-#include <functional>
 
 #include "ThreadLocal.h"
 
@@ -32,18 +29,25 @@ namespace paddle {
  * @code{.cpp}
  * 
  * paddle::CustomStackTrace<std::string> stack;
+ * PASS_TEST=0;
  * for (auto& layer : layers){
  *   stack.push(layer->getName());
- *   layer->forward();
+ *   layer->forward(passType);
  * }
- *
- * stack.pop("");  // mark under pop stage.
- *
- * for (auto it = layers.rbegin(); it != layers.rend(); ++it){
- *   auto& layer = *it;
+ * for (auto& layer : layers){
  *   layer->backward(passType);
  *   stack.pop(layer->getName());
  * }
+ * 
+ * if(passType == PASS_TEST) {
+ *   stack.clear();
+ * }
+ * else {
+ *   stack.dump([](const std::string& layername){
+ *     LOG(INFO) << "LayerName: " << layername;
+ *   })
+ * }
+ * 
  *
  * @endcode
  */
@@ -51,141 +55,45 @@ template <typename T>
 class CustomStackTrace{
 public:
   /**
-   * @brief Pop out an item from the top of the stack if item == top.
-   *        Else, just set status to popping.
+   * @brief Pop out an item from the top of the stack. For safety the item 
+   * will be poped should equal to ip.
    */
-  void pop(const T& item) {
-    pushing() = false;
-    auto& s = this->stack();
-    if (item == s.top()) {
-      s.pop();
+  void pop(const T& ip) {
+    auto& p = *logstack_;
+    CHECK_EQ(ip, p.top());
+    p.pop();
+  }
+  /**
+   * @brief Empty the stack by sequence from top to button.
+   * @param[in] callback A function deal with each item while dumping.
+   * It must have and only have a in parameter which is the stack item.
+   */
+  template <typename Callback>
+  void dump(Callback callback) {
+    auto& p = *logstack_;
+    while (!p.empty()) {
+      callback(p.top());
+      p.pop();
     }
   }
-
   /**
-   * @brief clear current thread stack.
+   * @brief Only empty the stack.
    */
   void clear() {
-    auto& s = stack();
-    while (!s.empty()) {
-      s.pop();
-    }
+    dump([](const T& ip){});
   }
-
   /**
-   * @brief return true if all thread's stack is empty.
-   * @return true if empty
+   * @brief Push item ip to the top of the stack.
    */
-  bool empty() const {
-    std::lock_guard<std::mutex> g(this->mtx_);
-    for (auto p : this->stackBuffers_) {
-      std::stack<T>& s = *p.second;
-      if (!s.empty()) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-
-  /**
-   * @brief DumpCallback Type. It will be invoked many times by dump method.
-   *
-   * The first parameter is stack thread id.
-   * The second parameter is the last action of stack is push or not.
-   * The third parameter is the item in stack.
-   */
-  typedef std::function<void(const std::thread::id& /*threadId*/,
-                              bool* /*isPushing*/,
-                              const T& /*item*/)> DumpCallback;
-
-  /**
-   * Dump all thread stack, and all stack will be cleared.
-   */
-  void dump(const DumpCallback& callback, bool onlyCurrentThread = false) {
-    std::lock_guard<std::mutex> g(this->mtx_);
-    for (auto p : this->stackBuffers_) {
-      std::thread::id tid = p.first;
-      if (onlyCurrentThread && tid != std::this_thread::get_id()) {
-        continue;
-      }
-      std::stack<T>& s = *p.second;
-      bool* isPush = nullptr;
-      auto it = this->pushingBuffers_.find(tid);
-      if (it != this->pushingBuffers_.end()) {
-        isPush = it->second;
-      }
-
-      while (!s.empty()) {
-        callback(tid, isPush, s.top());
-        s.pop();
-      }
-    }
-  }
-
-  /**
-   * @brief Push item to current thread stack.
-   */
-  void push(const T& item) {
-    pushing() = true;
-    auto& p = this->stack();
-    p.push(item);
+  void push(const T& ip) {
+    auto& p = *logstack_;
+    p.push(ip);
   }
 
 private:
-  /**
-   * Get thread local attribute, and save them into a map (threadId => TYPE*)
-   *
-   * @tparam TYPE thread local attribute type.
-   * @param threadLocal Thread Local object.
-   * @param buffers a map from threadId to TYPE*
-   */
-  template <typename TYPE>
-  inline TYPE& getThreadLocal(
-      ThreadLocal<TYPE>& threadLocal,
-      std::unordered_map<std::thread::id, TYPE*>& buffers) {
-    TYPE* retv = threadLocal.get(false);
-    if (retv) {
-      return *retv;
-    } else {
-      std::lock_guard<std::mutex> guard(this->mtx_);
-      retv = threadLocal.get();
-      auto id = std::this_thread::get_id();
-      buffers.insert({id, retv});
-      return *retv;
-    }
-  }
-
-  /**
-   * @brief Get thread local stack reference.
-   */
-  std::stack<T>& stack() {
-    return this->getThreadLocal(this->logStack_,
-                                this->stackBuffers_);
-  }
-
-  /**
-   * @brief Get thread local pushing flag.
-   */
-  bool& pushing() {
-    return this->getThreadLocal(this->isPushing_,
-                                this->pushingBuffers_);
-  }
-
-private:
-  mutable std::mutex mtx_;
-
-  std::unordered_map<std::thread::id, std::stack<T>* > stackBuffers_;
-  std::unordered_map<std::thread::id, bool* > pushingBuffers_;
-  ThreadLocal<bool> isPushing_;
-  ThreadLocal<std::stack<T> > logStack_;
+  ThreadLocalD<std::stack<T> > logstack_;
 };
 
 extern CustomStackTrace<std::string> gLayerStackTrace;
-
-/**
- * @brief Install a failure handler to print layer stack when error.
- */
-extern void installLayerStackTracer();
 
 }  // namespace paddle

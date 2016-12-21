@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 """
 Example:
     python paraconvert.py --b2t -i INPUT -o OUTPUT -d DIM
@@ -27,7 +28,6 @@ Options:
 """
 from optparse import OptionParser
 import struct
-
 
 def binary2text(input, output, paraDim):
     """
@@ -76,13 +76,12 @@ def binary2text(input, output, paraDim):
     fo.close()
     print "binary2text finish, total", line, "lines"
 
-
 def get_para_count(input):
     """
     Compute the total number of embedding parameters in input text file. 
     input: the name of input text file
     """
-    numRows = 1
+    numRows = 1 
     paraDim = 0
     with open(input) as f:
         line = f.readline()
@@ -90,7 +89,6 @@ def get_para_count(input):
         for line in f:
             numRows += 1
     return numRows * paraDim
-
 
 def text2binary(input, output, paddle_head=True):
     """
@@ -125,7 +123,6 @@ def text2binary(input, output, paddle_head=True):
     fo.close()
     print "text2binary finish, total", count, "lines"
 
-
 def main():
     """
     Main entry for running paraconvert.py 
@@ -134,26 +131,21 @@ def main():
             "python %prog --b2t -i INPUT -o OUTPUT -d DIM \n" \
             "python %prog --t2b -i INPUT -o OUTPUT"
     parser = OptionParser(usage)
-    parser.add_option(
-        "--b2t",
-        action="store_true",
-        help="convert parameter file of embedding model from binary to text")
-    parser.add_option(
-        "--t2b",
-        action="store_true",
-        help="convert parameter file of embedding model from text to binary")
-    parser.add_option(
-        "-i", action="store", dest="input", help="input parameter file name")
-    parser.add_option(
-        "-o", action="store", dest="output", help="output parameter file name")
-    parser.add_option(
-        "-d", action="store", dest="dim", help="dimension of parameter")
+    parser.add_option("--b2t", action="store_true",
+                      help="convert parameter file of embedding model from binary to text")
+    parser.add_option("--t2b", action="store_true",
+                      help="convert parameter file of embedding model from text to binary")
+    parser.add_option("-i", action="store", dest="input",
+                      help="input parameter file name")
+    parser.add_option("-o", action="store", dest="output",
+                      help="output parameter file name")
+    parser.add_option("-d", action="store", dest="dim",
+                      help="dimension of parameter")
     (options, args) = parser.parse_args()
     if options.b2t:
         binary2text(options.input, options.output, options.dim)
     if options.t2b:
         text2binary(options.input, options.output)
-
 
 if __name__ == '__main__':
     main()

@@ -465,11 +465,6 @@ SumOfSquaresCostLayer
 ..  doxygenclass:: paddle::SumOfSquaresCostLayer
     :members:
 
-SumCostLayer
-`````````````````````
-..  doxygenclass:: paddle::SumCostLayer
-    :members:
-
 CosSimLayer
 -----------
 ..  doxygenclass:: paddle::CosSimLayer

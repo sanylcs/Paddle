@@ -1,7 +1,3 @@
-==========
-Evaluators
-==========
-
 Base
 ====
 ..  automodule:: paddle.trainer_config_helpers.evaluators

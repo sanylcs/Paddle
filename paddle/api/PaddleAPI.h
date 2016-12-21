@@ -20,7 +20,6 @@ limitations under the License. */
 #include <string>
 #include <vector>
 #include "paddle/utils/GlobalConstants.h"
-#include "paddle/utils/TypeDefs.h"
 
 /// Import PaddlePaddle's enumeration into global namespace.
 using namespace paddle::enumeration_wrapper;  // NOLINT
@@ -446,6 +445,7 @@ struct OptimizationConfigPrivate;
 class OptimizationConfig {
   DISABLE_COPY_AND_ASSIGN(OptimizationConfig);
   OptimizationConfig();
+  void* getRawPtr();
 
 public:
   static OptimizationConfig* createFromProtoString(const std::string& str);
@@ -461,7 +461,6 @@ private:
 
   friend class TrainerConfig;
   friend class ParameterOptimizer;
-  friend class Trainer;
 };
 
 struct ParameterPrivate;
@@ -515,6 +514,8 @@ public:
   virtual ~ModelConfig();
 
 private:
+  void* getPaddleModelConfig() const;
+
   ModelConfigPrivate* m;
   friend class TrainerConfig;
   friend struct TrainerConfigPrivate;
@@ -537,7 +538,6 @@ public:
 
   static TrainerConfig* createFromTrainerConfigFile(
       const std::string& configPath);
-  static TrainerConfig* createFromProtoString(const std::string& str);
 
   ModelConfig* getModelConfig() const;
 
@@ -545,7 +545,6 @@ public:
 
 private:
   TrainerConfigPrivate* m;
-  friend class Trainer;
 };
 
 /**
@@ -700,12 +699,11 @@ private:
   GradientMachinePrivate* m;
 
   static GradientMachine* createFromPaddleModelPtr(
-      const void* confPtr, GradientMatchineCreateMode mode,
+      void* confPtr, GradientMatchineCreateMode mode,
       const std::vector<int>& types);
 
   // Not to use c++ 11 init-list, so we use static var as function default arg.
   static std::vector<int> defaultParamTypes;
-  friend class Trainer;
 };
 
 struct TrainerPrivate;
@@ -713,7 +711,6 @@ class Trainer {
 private:
   TrainerPrivate* m;
   Trainer();
-  Trainer(TrainerConfig* optConfig, GradientMachine* gm);
   DISABLE_COPY_AND_ASSIGN(Trainer);
 
 public:
@@ -722,42 +719,38 @@ public:
   /// Create A Trainer By TrainerConfig. using paddle command line.
   static Trainer* createByCommandLine() throw(IOError);
 
-  static Trainer* create(TrainerConfig* optConfig, GradientMachine* gm)
-      throw(IOError);
-
-  /// Start training
+  /// Start Train.
   void startTrain();
-
-  /// Finish training
   void finishTrain();
 
-  /// Start a pass.
+  /// Start Pass.
   void startTrainPass();
-
-  /// Finish a pass
   void finishTrainPass();
+
+  void setBatchSize(size_t batchSize);
 
   /**
    * Train one batch,
    *
+   * @param batchSize -1 wiil use command line or batch size set before,
+   *                  otherwise use this batchSize for train.
+   *
    * @return true if all batch finished.
    */
-  bool trainOneBatch(size_t batchSize);
+  bool trainOneBatch(size_t batchSize = -1UL);
 
-  void trainOneDataBatch(size_t batchSize, const Arguments& args);
+  bool prepareBatchData(size_t batchSize = -1UL);
 
-  void startTestPeriod();
-  void testOneDataBatch(size_t batchSize, const Arguments& args);
-  void finishTestPeriod();
+  void finishTrainOneBatch();
 
-  void forwardOneBatch(size_t batchSize);
+  void forwardOneBatch() throw(UnsupportError);
 
-  Arguments* getForwardOutput();
+  Arguments* getNetworkOutput();
 
   Matrix* getLayerOutput(const std::string& layerName);
 };
 
-/// the N-Best results generated from one input sequence.
+/// The N-Best results generated from one input sequence.
 class ISequenceResults {
 public:
   virtual ~ISequenceResults();

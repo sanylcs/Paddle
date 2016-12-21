@@ -46,6 +46,9 @@ bool CMRProjectionNormLayer::init(const LayerMap& layerMap,
   /* the size of inputs for norm-layer is 1 */
   CHECK_EQ(config_.inputs_size(), 1);
 
+  auto& inputConfig = config_.inputs(0);
+  blocked_ = inputConfig.norm_conf().blocked();
+
   return true;
 }
 
@@ -66,7 +69,7 @@ void CMRProjectionNormLayer::forward(PassType passType) {
   denoms_->zeroMem();
 
   outV->crossMapNormalFwd(*input, imgSizeH_, imgSizeW_, *denoms_, channels_,
-                          size_, scale_, pow_);
+                          size_, scale_, pow_, blocked_);
 }
 
 void CMRProjectionNormLayer::backward(const UpdateCallback& callback) {
@@ -83,6 +86,6 @@ void CMRProjectionNormLayer::backward(const UpdateCallback& callback) {
 
   preOutGrad->crossMapNormalBwd(*localGrad, *denoms_, *preOutV, *localOutV,
                                 channels_, imgSizeH_, imgSizeW_, size_, scale_,
-                                pow_);
+                                pow_, blocked_);
 }
 }  // namespace paddle

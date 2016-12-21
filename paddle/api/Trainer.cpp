@@ -13,7 +13,6 @@ See the License for the specific language governing permissions and
 limitations under the License. */
 
 #include "PaddleAPI.h"
-#include "PaddleAPIPrivate.h"
 
 #include <stdlib.h>
 #include <memory>
@@ -31,17 +30,31 @@ P_DECLARE_string(config);
 P_DECLARE_string(init_model_path);
 P_DECLARE_int32(start_pass);
 
-struct TrainerPrivate : public paddle::Trainer {
-  bool _trainOneBatch(size_t batchSize);
-  bool forwardOneBatch(size_t batchSize);
-  void forwardOneDataBatch(const std::vector<paddle::Argument>& inArgs);
-  void setBatchSize(size_t batchSize);
-  std::vector<paddle::Argument>& getForwardOutput();
+struct TrainPassContext {
+  int64_t batchId;
+  int32_t batchSize;
+  real avgTestCost;
+  int64_t numAvgTests;
+  int passInnerId;
+  paddle::DataBatch data;
+  std::vector<paddle::Argument> forwardOutput;
+};
 
-  void startTestPeriod();
-  void finishTestPeriod();
-  void testOneDataBatch(const paddle::DataBatch& dataBatch);
+struct TrainerPrivate : public paddle::Trainer {
+  void startTrain();
+  void finishTrain();
+
+  void startTrainPass();
+  void finishTrainPass();
+
+  bool _trainOneBatch();
+
+  bool _prepareBatchData();
+  void _forwardOneBatch() throw(UnsupportError);
+
   TrainerPrivate() : paddle::Trainer() {}
+
+  TrainPassContext trainPassContext;
 };
 
 Trainer::Trainer() : m(new TrainerPrivate()) {
@@ -62,75 +75,60 @@ Trainer* Trainer::createByCommandLine() throw(IOError) {
   }
 }
 
-Trainer::Trainer(TrainerConfig* config, GradientMachine* gm)
-    : m(new TrainerPrivate()) {
-  m->init(config->m->conf, /* testing= */false, gm ? gm->m->machine : nullptr);
-}
-
-Trainer* Trainer::create(TrainerConfig* config, GradientMachine* gm)
-    throw(IOError)
-{
-  auto retv = new Trainer(config, gm);
-  if (retv->m->getConfig().IsInitialized()) {
-    return retv;
-  } else {
-    retv->m->getConfig().CheckInitialized();
-    throw IOError();
-  }
-}
-
 void Trainer::startTrain() { m->startTrain(); }
+
+void TrainerPrivate::startTrain() {
+  srand(this->config_->getConfig().start_pass() + 1);
+  this->dataProvider_->reset();
+  this->trainerInternal_.getGradientMachine()->start(*config_, dataProvider_);
+}
 
 void Trainer::finishTrain() { m->finishTrain(); }
 
+void TrainerPrivate::finishTrain() {
+  this->trainerInternal_.getGradientMachine()->finish();
+}
+
 void Trainer::startTrainPass() { m->startTrainPass(); }
+
+void TrainerPrivate::startTrainPass() {
+  this->stats_.reset();
+  this->trainPassContext.batchId = 0;
+  this->trainPassContext.batchSize = this->config_->getOptConfig().batch_size();
+  this->trainPassContext.avgTestCost = 0;
+  this->trainPassContext.numAvgTests = 0;
+  this->trainPassContext.passInnerId = 0;
+  this->trainerInternal_.getParameterUpdater()->startPass();
+  this->evaluator_->start();
+}
 
 void Trainer::finishTrainPass() { m->finishTrainPass(); }
 
-void Trainer::trainOneDataBatch(size_t batchSize, const Arguments& inArgs) {
-  paddle::DataBatch dataBatch;
-  dataBatch.getStreams() = inArgs.m->outputs;
-  dataBatch.setSize(batchSize);
-  m->trainOneDataBatch(dataBatch);
+void TrainerPrivate::finishTrainPass() {
+  this->trainerInternal_.getGradientMachine()->onPassEnd();
+  this->trainerInternal_.getParameterUpdater()->finishPass();
+  evaluator_->finish();
+}
+
+void Trainer::setBatchSize(size_t batchSize) {
+  this->m->trainPassContext.batchSize = batchSize;
 }
 
 bool Trainer::trainOneBatch(size_t batchSize) {
-  return m->_trainOneBatch(batchSize);
+  if (batchSize == -1UL) {
+    this->setBatchSize(batchSize);
+  }
+  return m->_trainOneBatch();
 }
 
-bool TrainerPrivate::_trainOneBatch(size_t batchSize) {
-  paddle::DataBatch dataBatch;
-  CHECK(dataProvider_) << "data_provider is not specified";
-  int num = dataProvider_->getNextBatch(batchSize, &dataBatch);
-  if (num == 0) {
-    return false;
+bool TrainerPrivate::_trainOneBatch() {
+  if (this->_prepareBatchData()) {
+    return true;
   }
-  trainOneDataBatch(dataBatch);
+  this->trainerInternal_.trainOneBatch(this->trainPassContext.batchId,
+                                       this->trainPassContext.data);
   return false;
 }
-
-void TrainerPrivate::startTestPeriod() {
-  if (!tester_) {
-    createTester();
-  }
-  tester_->startTestPeriod();
-}
-
-void Trainer::startTestPeriod() { m->startTestPeriod(); }
-
-void TrainerPrivate::testOneDataBatch(const paddle::DataBatch& dataBatch) {
-  tester_->testOneDataBatch(dataBatch, &forwardOutput_);
-}
-
-void Trainer::testOneDataBatch(size_t batchSize, const Arguments& args) {
-  paddle::DataBatch dataBatch;
-  dataBatch.getStreams() = args.m->outputs;
-  dataBatch.setSize(batchSize);
-  m->testOneDataBatch(dataBatch);
-}
-
-void TrainerPrivate::finishTestPeriod() { tester_->finishTestPeriod(); }
-void Trainer::finishTestPeriod() { m->finishTestPeriod(); }
 
 Matrix* Trainer::getLayerOutput(const std::string& layerName) {
   auto nn = std::dynamic_pointer_cast<paddle::NeuralNetwork>(
@@ -140,37 +138,46 @@ Matrix* Trainer::getLayerOutput(const std::string& layerName) {
   return Matrix::createByPaddleMatrixPtr(&m);
 }
 
-void Trainer::forwardOneBatch(size_t batchSize) { m->forwardOneBatch(batchSize); }
-
-bool TrainerPrivate::forwardOneBatch(size_t batchSize)  {
-  CHECK(dataProvider_) << "data_provider is not specified";
-  paddle::DataBatch dataBatch;
-  int num = dataProvider_->getNextBatch(batchSize, &dataBatch);
-  if (num == 0) {
-    return false;
+bool Trainer::prepareBatchData(size_t batchSize) {
+  if (batchSize != -1UL) {
+    this->setBatchSize(batchSize);
   }
-
-  forwardOneDataBatch(dataBatch.getStreams());
-  return true;
+  return this->m->_prepareBatchData();
 }
 
-void TrainerPrivate::forwardOneDataBatch(
-    const std::vector<paddle::Argument>& inArgs) {
+bool TrainerPrivate::_prepareBatchData() {
+  int num = dataProvider_->getNextBatch(this->trainPassContext.batchSize,
+                                        &this->trainPassContext.data);
+  return num == 0;
+}
 
-  std::vector<paddle::Argument>& outArgs = forwardOutput_;
+void Trainer::finishTrainOneBatch() { ++m->trainPassContext.batchId; }
+
+void Trainer::forwardOneBatch() throw(UnsupportError) { m->_forwardOneBatch(); }
+
+void TrainerPrivate::_forwardOneBatch() throw(UnsupportError) {
+  auto& dataBatch = this->trainPassContext.data;
+
+  int64_t actualBatchSize = dataBatch.getSize();
+  if (actualBatchSize == 0) {
+    return;
+  }
+
+  const std::vector<paddle::Argument>& inArgs = dataBatch.getStreams();
+  std::vector<paddle::Argument>& outArgs = this->trainPassContext.forwardOutput;
+  outArgs.clear();
+  paddle::PassType passType =
+      this->trainerInternal_.getParameterUpdater()->startBatch(actualBatchSize);
 
   if (config_->getOptConfig().use_sparse_remote_updater()) {
-    trainerInternal_.getGradientMachine()->prefetch(inArgs);
-    trainerInternal_.getParameterUpdater()->getParametersRemote();
+    this->trainerInternal_.getGradientMachine()->prefetch(inArgs);
+    this->trainerInternal_.getParameterUpdater()->getParametersRemote();
   }
-  trainerInternal_.getGradientMachine()->forward(
-      inArgs, &outArgs, paddle::PASS_TEST);
+  this->trainerInternal_.getGradientMachine()->forward(
+        inArgs, &outArgs, passType);
 }
 
-Arguments* Trainer::getForwardOutput() {
-  return Arguments::createByPaddleArgumentVector(&m->getForwardOutput());
-}
-
-std::vector<paddle::Argument>& TrainerPrivate::getForwardOutput() {
-  return forwardOutput_;
+Arguments* Trainer::getNetworkOutput() {
+  return Arguments::createByPaddleArgumentVector(
+      &m->trainPassContext.forwardOutput);
 }

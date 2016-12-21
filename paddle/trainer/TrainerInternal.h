@@ -81,9 +81,7 @@ public:
    * @param batchId current batch id
    * @param dataBatch data for the batch
    */
-  void trainOneBatch(int64_t batchId,
-                     const DataBatch& dataBatch,
-                     std::vector<Argument>* outArgs);
+  void trainOneBatch(int64_t batchId, const DataBatch& dataBatch);
 
   /**
    * showParameterStats

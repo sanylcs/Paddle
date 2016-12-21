@@ -374,8 +374,7 @@ void ProtoDataProvider::reset() {
 }
 
 void ProtoDataProvider::shuffle() {
-  std::shuffle(shuffledSequenceIds_.begin(), shuffledSequenceIds_.end(),
-      ThreadLocalRandomEngine::get());
+  std::random_shuffle(shuffledSequenceIds_.begin(), shuffledSequenceIds_.end());
 }
 
 /*

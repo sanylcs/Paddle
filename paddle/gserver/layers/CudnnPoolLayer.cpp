@@ -12,6 +12,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
+
 #include "paddle/utils/Logging.h"
 #include "paddle/utils/Stat.h"
 #include "paddle/math/Matrix.h"
@@ -50,6 +51,7 @@ bool CudnnPoolLayer::init(const LayerMap &layerMap,
   PoolLayer::init(layerMap, parameterMap);
 
   CHECK(useGpu_) << "CudnnPoolLayer only support gpu";
+  CHECK_EQ(start_, 0) << poolType_ << " dose not support 'start'";
 
   hl_create_tensor_descriptor(&inputDesc_);
   hl_create_tensor_descriptor(&outputDesc_);
@@ -61,9 +63,9 @@ bool CudnnPoolLayer::init(const LayerMap &layerMap,
   strideHeight = strideY_;
   strideWidth = stride_;
 
-  hl_create_pooling_descriptor(&poolingDesc_, mode_, windowHeight, windowWidth,
-                               heightPadding, widthPadding, strideHeight,
-                               strideWidth);
+  hl_create_pooling_descriptor(&poolingDesc_, mode_, windowHeight,
+                               windowWidth, heightPadding, widthPadding,
+                               strideHeight, strideWidth);
 
   return true;
 }
@@ -79,10 +81,8 @@ void CudnnPoolLayer::reshape(int batchSize) {
   }
   CHECK_EQ(inputLayers_[0]->getOutput().value->getWidth(),
            channels_ * imageH_ * imageW_);
-  outputH_ = outputSize(imageH_, sizeY_, confPaddingY_, strideY_,
-                        /* caffeMode */ false);
-  outputW_ =
-      outputSize(imageW_, sizeX_, confPadding_, stride_, /* caffeMode */ false);
+  outputH_ = outputSize(imageH_, sizeY_, confPaddingY_, strideY_);
+  outputW_ = outputSize(imageW_, sizeX_, confPadding_, stride_);
   getOutput().setFrameHeight(outputH_);
   getOutput().setFrameWidth(outputW_);
 
@@ -100,7 +100,8 @@ void CudnnPoolLayer::forward(PassType passType) {
 
   real *inputData = getInputValue(0)->getData();
   real *outData = getOutputValue()->getData();
-  hl_pooling_forward(inputDesc_, inputData, outputDesc_, outData, poolingDesc_);
+  hl_pooling_forward(inputDesc_, inputData, outputDesc_, outData,
+                     poolingDesc_);
 }
 
 void CudnnPoolLayer::backward(const UpdateCallback &callback) {
@@ -113,8 +114,8 @@ void CudnnPoolLayer::backward(const UpdateCallback &callback) {
   real *inputGrad = getInputGrad(0)->getData();
   real *outData = getOutputValue()->getData();
   real *outGrad = getOutputGrad()->getData();
-  hl_pooling_backward(inputDesc_, inputData, inputGrad, outputDesc_, outData,
-                      outGrad, poolingDesc_);
+  hl_pooling_backward(inputDesc_, inputData, inputGrad, outputDesc_,
+                      outData, outGrad, poolingDesc_);
 }
 
 CudnnPoolLayer::~CudnnPoolLayer() {

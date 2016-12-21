@@ -57,8 +57,7 @@ void BufferBatch::clone(DataBatch* srcBatch, bool useGpu) {
   }
 }
 
-DoubleBuffer::DoubleBuffer(DataProvider *dataPool,
-                           bool useGpu,
+DoubleBuffer::DoubleBuffer(DataProvider* dataPool, bool useGpu,
                            int64_t batchSize) {
   batchSize_ = batchSize;
   dataPool_ = dataPool;
@@ -111,9 +110,6 @@ void DoubleBuffer::removeOneBatch(DataBatch* dataBatch) {
 }
 
 void DoubleBuffer::insertOneBatch(DataBatch* batch) {
-  while (!bufferQueue_->waitNotEmptyFor(2 /* seconds */)) {  // time out
-    if (stopping_) return;
-  }
   BufferBatch* bufBatch = bufferQueue_->dequeue();
   // clone and copy the data from an Threadlocal Variable
   bufBatch->clone(batch, useGpu_);
@@ -131,10 +127,9 @@ void DoubleBuffer::asyncLoadBatch() {
     taskReadySem_.wait();
     if (stopping_) break;
 
-    while (batchSize_ == 0 && !stopping_) {
+    while (batchSize_ == 0) {
       usleep(5);
     }
-    if (stopping_) break;
 
     do {
       DataBatch newBatch;
@@ -143,7 +138,7 @@ void DoubleBuffer::asyncLoadBatch() {
         actualSize = dataPool_->getNextBatchInternal(batchSize_, &newBatch);
       }
       insertOneBatch(&newBatch);
-    } while (actualSize > 0 && !stopping_);
+    } while (actualSize > 0);
   }
 }
 
@@ -154,13 +149,9 @@ void DoubleBuffer::startAsyncLoad() {
   taskReadySem_.post();
 }
 
-ClassRegistrar<DataProvider, DataConfig, ModelConfig, bool>
-DataProvider::registrar_;
-
-DataProvider* DataProvider::create(const DataConfig& config,
-                                   const ModelConfig& modelConfig,
-                                   bool useGpu) {
-  return registrar_.createByType(config.type(), config, modelConfig, useGpu);
+ClassRegistrar<DataProvider, DataConfig, bool> DataProvider::registrar_;
+DataProvider* DataProvider::create(const DataConfig& config, bool useGpu) {
+  return registrar_.createByType(config.type(), config, useGpu);
 }
 
 REGISTER_DATA_PROVIDER(simple, SimpleDataProvider);

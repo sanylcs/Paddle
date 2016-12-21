@@ -82,11 +82,7 @@ TEST(trainerOnePass, gpu2) { trainerOnePassTest(configFile1, true, false, 2); }
 
 TEST(trainerOnePass, gpu4) { trainerOnePassTest(configFile1, true, false, 4); }
 
-TEST(trainerOnePass, parallel) {
-  if (hl_get_device_count() >= 2) {
-    trainerOnePassTest(configFile2, true, true);
-  }
-}
+TEST(trainerOnePass, parallel) { trainerOnePassTest(configFile2, true, true); }
 #endif
 
 // 2. test average_window.

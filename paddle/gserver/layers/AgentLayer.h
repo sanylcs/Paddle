@@ -191,7 +191,11 @@ class SequenceScatterAgentLayer : public ScatterAgentLayer {
 protected:
   // use to store expanded cpuStartPositions or subSequenceStartPositions
   // of real layer.
-  ICpuGpuVectorPtr inputStartPos_;
+  IVectorPtr cpuInputStartPos_;
+
+  // point to cpuInputStartPos_ when useGpu_ is false
+  // copy from cpuInputStartPos_ when useGpu_ is true
+  IVectorPtr inputStartPos_;
 
 public:
   explicit SequenceScatterAgentLayer(const LayerConfig& config)

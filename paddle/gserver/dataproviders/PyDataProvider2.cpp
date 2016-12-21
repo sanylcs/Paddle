@@ -14,43 +14,15 @@ limitations under the License. */
 
 #ifndef PADDLE_NO_PYTHON
 
-#include <Python.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unordered_set>
 #include <list>
-#include <numpy/numpyconfig.h>
-#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
-#include <numpy/ndarrayobject.h>
 
 #include "DataProvider.h"
-
 #include "paddle/utils/PythonUtil.h"
-#include "paddle/utils/Locks.h"
-#include "paddle/utils/Stat.h"
 
 namespace paddle {
-
-namespace unittest {
-
-static std::unique_ptr<std::function<void(size_t /*poolActualSize */)>>
-         OnPoolFilled;
-
-namespace pydp2 {
-
-void setOnPoolFilledHook(const std::function<void(size_t)>& callback) {
-  OnPoolFilled.reset(new std::function<void(size_t)>());
-  *OnPoolFilled = callback;
-}
-
-void clearOnPoolFilledHook() {
-  OnPoolFilled.reset();
-}
-
-}  // namespace pydp2
-}  // namespace unittest
-
-
 
 /**
  * Slot type
@@ -207,12 +179,8 @@ public:
    * Ctor
    */
   PyDataProvider2(const DataConfig& config,
-                  const ModelConfig& modelConfig,
                   bool useGpu)
-    :DataProvider(config, useGpu),
-      callingContextCreated_(2) {
-    if (PyArray_API == NULL)
-      import_array();
+    :DataProvider(config, useGpu), callingContextCreated_(2) {
     auto& args = config.load_data_args();
     PyObjectPtr kwargs = PyObjectPtr(PyDict_New());
     if (!args.empty()) {
@@ -224,12 +192,6 @@ public:
 
     py::DictHelper kwargsDict(kwargs);
     kwargsDict.setBool("is_train", !config.for_test());
-    std::vector<std::string> inputs;
-    inputs.reserve(modelConfig.input_layer_names().size());
-    std::copy(modelConfig.input_layer_names().begin(),
-              modelConfig.input_layer_names().end(),
-              std::back_inserter(inputs));
-    kwargsDict.setStringList("input_order", inputs);
 
     // kwargs is keyword arguemts to create object.
     this->createPyDataObj(config.load_data_module(),
@@ -237,7 +199,7 @@ public:
                           config.files(),
                           std::move(kwargs));
     DBG << "Instance " << instance_.get() << " loaded.";
-    this->readPyFields(config.for_test());
+    this->readPyFields();
     DBG << "Py Field Done";
   }
 
@@ -256,7 +218,8 @@ private:
                        PyObjectPtr && kwargs) {
     LOG(INFO) << "loading dataprovider " << model <<"::" << className;
 
-    PyObjectPtr module = py::import(model);
+    PyObjectPtr module(PyImport_ImportModule(model.c_str()));
+    CHECK_PY(module) << "Cannot imort module " << model.c_str();
     PyObjectPtr moduleDict(PyModule_GetDict(module.get()));
     CHECK_PY(moduleDict) << "Invoke module.__dict__ error";
     PyObjectPtr cls(PyDict_GetItemString(moduleDict.get(),
@@ -290,28 +253,14 @@ private:
     CHECK_PY(instance_) << "Cannot Create instance";
   }
 
-  void readPyFields(bool testing) {
+  void readPyFields() {
     py::ObjectHelper self(this->instance_);
+    this->skipShuffle_ = !self.getBoolAttr("should_shuffle");
     bool ok;
-
-    this->skipShuffle_ = !self.getBoolAttr("should_shuffle",
-                                           &ok /*isBoolType*/);
-    if (!ok) {
-      this->skipShuffle_ = testing;  // shuffle when is training, skip shuffle
-                                     // when is testing.
-    }
-    DBG << "Provider Skip Shuffle " << this->skipShuffle_;
-
     this->poolSize_ = self.getIntAttr<size_t>("pool_size", &ok);
     if (!ok) {
       this->poolSize_ = -1UL;
     }
-    this->minPoolSize_ = self.getIntAttr<size_t>("min_pool_size", &ok);
-    if (!ok) {
-      this->minPoolSize_ = -1UL;
-    }
-    this->minPoolSize_ = std::min(this->poolSize_, this->minPoolSize_);
-
     this->canOverBatchSize_ = self.getBoolAttr("can_over_batch_size");
 
     calcBatchSize_.reset(self.getAttr("calc_batch_size"));
@@ -358,6 +307,7 @@ private:
   }
 
   void loadThread() {
+    callingContexts_.reserve(fileLists_.size());
     DBG << "Creating context";
     for (auto& filename : fileLists_) {
       PyGuard g;
@@ -382,20 +332,7 @@ private:
         bool atEnd;
         data = py::iterNext(callingContexts_[cid], &atEnd);
         if (atEnd || data == nullptr) {
-          if (cid != 0) {
-            std::swap(callingContexts_[cid], callingContexts_[0]);
-            cid = 0;
-          }
-
-          PyObjectPtr front;
-          {
-            std::unique_lock<std::mutex> l(mtx_);
-            front = pop_get_front(callingContexts_);
-          }
-          {
-            PyGuard g;
-            front.reset();
-          }
+          callingContexts_.erase(callingContexts_.begin() + cid);
           this->pullCV_.notify_all();
           continue;
         }
@@ -403,7 +340,6 @@ private:
 
       size_t additionalBatchSize = 1;
       if (calcBatchSize_) {
-        PyGuard guard;
         py::CallableHelper calcBatchSize(this->calcBatchSize_);
         calcBatchSize.setArgsSize(1);
         calcBatchSize.getArgs().set(0, data);
@@ -417,7 +353,11 @@ private:
       if (this->loadThread_){  // wait poolActualSize < poolSize;
         std::unique_lock<std::mutex> l(mtx_);
         pushCV_.wait(l, [this, additionalBatchSize] {
-          return this->poolActualSize_ < poolSize_;
+          if (this->canOverBatchSize_) {
+            return this->poolActualSize_ < poolSize_;
+          } else {
+            return this->poolActualSize_ + additionalBatchSize < poolSize_;
+          }
         });
       }
 
@@ -426,61 +366,52 @@ private:
         poolActualSize_ += additionalBatchSize;
         dataPool_.emplace_back(data);
       }
-      pullCV_.notify_all();
+
+      {
+        pullCV_.notify_all();
+      }
     }
     DBG << "load thread end";
   }
 
   inline void resetImpl(bool startNewThread) {
     DBG << "Reseting " << startNewThread;
-    exit_.store(true);
     if (loadThread_) {  // is loading.
+      exit_.store(true);
       loadThread_->join();
       loadThread_.reset();
     }
     {
       PyGuard g;
       callingContexts_.clear();
-      this->pullCV_.notify_one();
-    }
-
-    std::lock_guard<std::mutex> guard(mutexForReset_);
-    {
-      PyGuard g;
       dataPool_.clear();
     }
     poolActualSize_ = 0;
-
+    exit_ = false;
     if (startNewThread && cache_->reset()) {
       DBG << "Start new thread.";
       loadThread_.reset(new std::thread([this] {
-        exit_ = false;
         loadThread();
       }));
       callingContextCreated_.wait();
     }
     DBG << "Reset done";
-    exit_ = false;
   }
 
 private:
   std::unique_ptr<std::thread> loadThread_;
   std::atomic<bool> exit_;
-  std::deque<PyObjectPtr> callingContexts_;
+  std::vector<PyObjectPtr> callingContexts_;
   std::deque<PyObjectPtr> dataPool_;
   size_t poolActualSize_;
   std::condition_variable pushCV_;
   std::condition_variable pullCV_;
   std::mutex mtx_;
-
-  std::mutex mutexForReset_;
-
   ThreadBarrier callingContextCreated_;
   std::unique_ptr<IPyDataProviderCache> cache_;
 
   PyObjectPtr instance_;
   size_t poolSize_;
-  size_t minPoolSize_;
   bool canOverBatchSize_;
   PyObjectPtr calcBatchSize_;
   PyObjectPtr generator_;
@@ -517,8 +448,8 @@ public:
    * Resetting the PyDataProvider. May start reading thread here.
    */
   virtual void reset() {
-    resetImpl(true);
     DataProvider::reset();
+    resetImpl(true);
   }
 
   /**
@@ -539,8 +470,6 @@ public:
    * Loading a batch of data.
    */
   int64_t getNextBatchInternal(int64_t size_, DataBatch *batch) {
-    std::lock_guard<std::mutex> guard(mutexForReset_);
-    REGISTER_TIMER("PyDP2.getNextBatchInternal")
     CHECK_GE(size_, 0);
     size_t size = (size_t) size_;
     if (loadThread_) {  // loading from thread should wait for data pool ready.
@@ -548,13 +477,8 @@ public:
                         // data pool ready.
       std::unique_lock<std::mutex> l(mtx_);
       pullCV_.wait(l, [this, &size] {
-        return this->poolActualSize_ >= std::max(size, this->minPoolSize_)
-            || callingContexts_.empty();
+        return this->poolActualSize_ >= size || callingContexts_.empty();
       });
-
-      if (unittest::OnPoolFilled) {
-        (*unittest::OnPoolFilled)(this->poolActualSize_);
-      }
     }
     std::deque<PyObjectPtr> data;
     size_t bsize = 0;
@@ -565,17 +489,12 @@ public:
     } else {  // loading from cache.
       poolPtr = this->cache_->load();
     }
-    if (exit_) {
-      // PyDataProvider is destructing.
-      return 0;
-    }
     CHECK(poolPtr != nullptr);
 
     std::deque<PyObjectPtr>& pool = *poolPtr;
 
     while (bsize < size && !pool.empty()) {
-      {
-        // move data from pool to data
+      {  // move data from pool to data
         std::lock_guard<std::mutex> guard(mtx_);
         if (skipShuffle_) {
           size_t i = 0;
@@ -585,32 +504,23 @@ public:
         } else {  // when shuffle, use swap to drop only last pool element.
           size_t i = ThreadLocalRand::rand() % pool.size();
           CHECK(pool[i] != nullptr);
-          if (i != 0) {
-            std::swap(pool[i], pool.front());
+          if (i != pool.size() - 1) {
+            std::swap(pool[i], pool.back());
           }
-          data.emplace_back(std::move(pool.front()));
-          pool.pop_front();
+          data.emplace_back(std::move(pool.back()));
+          pool.pop_back();
         }
-
+      }
+      {
         if (calcBatchSize_) {  // custom calc batch size.
-          PyGuard guard;
           Py_INCREF(data.back().get());
           py::CallableHelper calcBatchSize(calcBatchSize_);
           calcBatchSize.setArgsSize(1);
           calcBatchSize.getArgs().set(0, data.back());
           PyObjectPtr customBatchSize(calcBatchSize());
           bool ok;
-          size_t tmp = py::castInt<size_t>(customBatchSize.get(), &ok);
+          bsize += py::castInt<size_t>(customBatchSize.get(), &ok);
           CHECK(ok) << "calc_batch_size must return int";
-
-          if (bsize + tmp > size && !canOverBatchSize_) {
-            // Put data back.
-            pool.push_front(std::move(data.back()));
-            data.pop_back();
-            break;
-          } else {
-            bsize += tmp;
-          }
         } else {
           bsize += 1;
         }
@@ -665,11 +575,6 @@ public:
       scanners[i]->finishFill(inArgs[i]);
     }
 
-    {
-      PyGuard g;
-      cache_->drop(&data);
-    }
-
     DBG << "Reading CPU Batch Done.";
 
     if (useGpu_) {
@@ -686,6 +591,11 @@ public:
     } else {
       *batch = cpuBatch;
     }
+
+    {
+      PyGuard g;
+      cache_->drop(&data);
+    }
     return bsize;
   }
 };
@@ -693,8 +603,7 @@ public:
 std::unordered_set<uintptr_t > PyDataProvider2::gModuleClsPtrs_;
 PyObjectPtr PyDataProvider2::zeroTuple_(PyTuple_New(0));
 
-REGISTER_DATA_PROVIDER_EX(py2, PyDataProvider2);
-
+REGISTER_DATA_PROVIDER(py2, PyDataProvider2);
 
 /**
  * Scanner for dense slot.
@@ -725,22 +634,10 @@ public:
    */
   virtual void fill(Argument &argument, PyObject *obj) {
     real* dat = argument.value->getData() + height_ * headerPtr_->dim;
-    if (PyArray_Check(obj)) {
-        auto dtype = PyArray_DTYPE((PyArrayObject*)obj);
-        if (dtype->type == 'f' && dtype->elsize == sizeof(real)) {
-            real * data = (real*)PyArray_DATA((PyArrayObject*)obj);
-            auto sz = PyArray_SIZE((PyArrayObject*)obj);
-            std::copy(data, data + sz, dat);
-        } else {
-            LOG(FATAL) << "You should yield float" << sizeof(real) * 8
-                       << " array";
-        }
-     } else {
-        py::SequenceHelper s(obj);
-        // TODO(yuyang18): Here we can use AVX or SSE to accelerate memory copy.
-        for (size_t i=0; i < headerPtr_->dim; ++i) {
-          dat[i] = (real) s.getDouble(i);
-        }
+    py::SequenceHelper s(obj);
+    // TODO(yuyang18): Here we can use AVX or SSE to accelerate memory copy.
+    for (size_t i=0; i < headerPtr_->dim; ++i) {
+      dat[i] = (real) s.getDouble(i);
     }
     ++height_;
   }

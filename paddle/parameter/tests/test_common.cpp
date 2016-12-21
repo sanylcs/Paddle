@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License. */
 
 
-#include <stdlib.h>
+#include <malloc.h>
 #include <paddle/utils/Util.h>
 
 #include <gtest/gtest.h>
@@ -124,13 +124,9 @@ void CommonTest::test_sgdUpadate(real* gradientBuffer, real* valueBuffer,
 TEST_F(CommonTest, sgdUpdate) {
   const size_t alignHeader[] = {0, 2, 3, 5, 7, 8};
   for (auto& size : sizeVec_) {
-    real *gradientBuffer, *valueBuffer, *momentumBuffer;
-    CHECK_EQ(posix_memalign((void**)&gradientBuffer, 32, sizeof(real) * size),
-        0);
-    CHECK_EQ(posix_memalign((void**)&valueBuffer, 32, sizeof(real) * size), 0);
-    CHECK_EQ(posix_memalign((void**)&momentumBuffer, 32, sizeof(real) * size),
-        0);
-
+    real* gradientBuffer = (real*)memalign(32, sizeof(real) * size);
+    real* valueBuffer = (real*)memalign(32, sizeof(real) * size);
+    real* momentumBuffer = (real*)memalign(32, sizeof(real) * size);
     for (size_t i = 0; i < size; i++) {
       gradientBuffer[i] = 1.0;
       valueBuffer[i] = 2.0;

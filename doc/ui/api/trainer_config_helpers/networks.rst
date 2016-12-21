@@ -1,9 +1,3 @@
-========
-Networks
-========
-
-The networks module contains pieces of neural network that combine multiple layers.
-
 NLP
 ===
 
@@ -117,3 +111,4 @@ outputs
 ..  automodule:: paddle.trainer_config_helpers.networks
     :members: outputs
     :noindex:
+

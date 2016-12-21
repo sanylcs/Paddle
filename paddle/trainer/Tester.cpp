@@ -71,36 +71,24 @@ Tester::Tester(const std::shared_ptr<TrainerConfigHelper> &config,
       parameterUpdater_));
 }
 
-void Tester::startTestPeriod() {
+void Tester::testOnePeriod() {
+  DataBatch dataBatch;
+  int64_t batchSize = config_->getOptConfig().batch_size();
   testEvaluator_->start();
-  testContext_.cost = 0;
-  testContext_.numSamples = 0;
+  real cost = 0;
+  int64_t numSamples = 0;
+  bool testAllData =
+      intconfig_->testPeriod == 0 || intconfig_->testAllDataInOnePeriod;
+
+  int batches =
+      testAllData ? std::numeric_limits<int>::max() : intconfig_->testPeriod;
 
   parameterUpdater_->apply();
   if (intconfig_->prevBatchState) {
     gradientMachine_->getState(*intconfig_->trainState);
     gradientMachine_->setState(*intconfig_->testState);
   }
-}
 
-void Tester::testOneDataBatch(
-    const DataBatch& dataBatch, std::vector<Argument>* outArgs) {
-  testContext_.cost += forwardOneBatch(
-    dataBatch, testEvaluator_.get(), outArgs);
-  testContext_.numSamples += dataBatch.getSize();
-}
-
-void Tester::testOnePeriod() {
-  DataBatch dataBatch;
-  int64_t batchSize = config_->getOptConfig().batch_size();
-  bool testAllData =
-      intconfig_->testPeriod == 0 || intconfig_->testAllDataInOnePeriod;
-  int batches =
-      testAllData ? std::numeric_limits<int>::max() : intconfig_->testPeriod;
-
-  std::vector<Argument> outArgs;
-
-  startTestPeriod();
   for (int i = 0; i < batches; ++i) {
     int num = testDataProvider_->getNextBatch(batchSize, &dataBatch);
     if (num == 0) {
@@ -114,18 +102,13 @@ void Tester::testOnePeriod() {
         num = testDataProvider_->getNextBatch(batchSize, &dataBatch);
       }
     }
-    testOneDataBatch(dataBatch, &outArgs);
+    cost += testOneBatch(dataBatch, testEvaluator_.get());
+    numSamples += num;
   }
-  finishTestPeriod();
-}
-
-void Tester::finishTestPeriod() {
   testEvaluator_->finish();
-  CHECK_GT(testContext_.numSamples, 0)
-      << "There is no samples in your test batch. Possibly "
-         "wrong implementation of DataProvidor.reset()";
-  LOG(INFO) << " Test samples=" << testContext_.numSamples
-            << " cost=" << testContext_.cost / testContext_.numSamples
+  CHECK_GT(numSamples, 0) << "There is no samples in your test batch. Possibly "
+                             "wrong implementation of DataProvidor.reset()";
+  LOG(INFO) << " Test samples=" << numSamples << " cost=" << cost / numSamples
             << " Eval: " << *testEvaluator_;
   parameterUpdater_->restore();
   if (intconfig_->prevBatchState) {
@@ -145,11 +128,9 @@ int64_t Tester::testOneBatchById(int64_t batchId) {
     return 0;
   }
 
-  std::vector<Argument> outArgs;
-
   stats_ += std::pair<int64_t, real>{
       actualBatchSize,
-      forwardOneBatch(dataBatch, testEvaluator_.get(), &outArgs)};
+      testOneBatch(dataBatch, testEvaluator_.get())};
 
   if (((batchId + 1) % intconfig_->logPeriod) == 0) {
     LOG(INFO) << " Batch=" << batchId + 1 << " " << stats_.getStats(false);
@@ -158,10 +139,7 @@ int64_t Tester::testOneBatchById(int64_t batchId) {
   return actualBatchSize;
 }
 
-real Tester::forwardOneBatch(const DataBatch &dataBatch,
-                             Evaluator *evaluator,
-                             std::vector<Argument>* pOutArgs) {
-  auto& outArgs = *pOutArgs;
+real Tester::testOneBatch(const DataBatch &dataBatch, Evaluator *evaluator) {
   const std::vector<Argument>& inArgs = dataBatch.getStreams();
   if (intconfig_->loadsaveParametersInPserver) {
     REGISTER_TIMER("prefetch");
@@ -170,11 +148,12 @@ real Tester::forwardOneBatch(const DataBatch &dataBatch,
                                            true /*after apply*/);
   }
 
+  std::vector<Argument> outArgs;
   gradientMachine_->forward(inArgs, &outArgs, PASS_TEST);
 
   // write features if set this flag and outArgs is not empty
   std::string featFile = intconfig_->featFile;
-  if (!featFile.empty() && outArgs.empty()) {
+  if (!featFile.empty() && !outArgs.empty()) {
     size_t numOutputs = outArgs.size();
     std::vector<MatrixPtr> featMatrices;
     featMatrices.resize(numOutputs);

@@ -26,7 +26,11 @@ namespace paddle {
 bool CostLayer::init(const LayerMap& layerMap,
                      const ParameterMap& parameterMap) {
   bool ret = Layer::init(layerMap, parameterMap);
-  coeff_ = config_.coeff();
+  if (config_.has_coeff()) {
+    coeff_ = config_.coeff();  // coeff only affact bp
+  } else {
+    coeff_ = real(1.0);
+  }
   if (!ret) return ret;
   CHECK_GE(inputLayers_.size(), 2UL);
   CHECK_LE(inputLayers_.size(), 3UL);
@@ -462,43 +466,25 @@ bool MultiBinaryLabelCrossEntropy::init(const LayerMap& layerMap,
 
 void MultiBinaryLabelCrossEntropy::forwardImp(Matrix& output, Argument& label,
                                               Matrix& target) {
-  MatrixPtr value = nullptr;
-  if (label.ids) {
-    CHECK(!label.value);
-    value = label.ids->toOneHotSparseMatrix(output.getWidth(), useGpu_);
-  } else {
-    CHECK(label.value);
-    value = label.value;
-  }
-
-  if (dynamic_cast<CpuSparseMatrix*>(value.get()) ||
-      dynamic_cast<GpuSparseMatrix*>(value.get())) {
-    target.multiBinaryLabelCrossEntropy(output, *value);
+  if (dynamic_cast<CpuSparseMatrix*>(label.value.get()) ||
+      dynamic_cast<GpuSparseMatrix*>(label.value.get())) {
+    target.multiBinaryLabelCrossEntropy(output, *label.value);
   } else {
     Matrix::resizeOrCreate(targetPerDim_, output.getHeight(), output.getWidth(),
                            false, useGpu_);
 
-    targetPerDim_->binaryLabelCrossEntropy(output, *value);
+    targetPerDim_->binaryLabelCrossEntropy(output, *label.value);
     targetPerDim_->rowSum(target);
   }
 }
 
 void MultiBinaryLabelCrossEntropy::backwardImp(
     Matrix& output, Argument& label, Matrix& outputG) {
-  MatrixPtr value = nullptr;
-  if (label.ids) {
-    CHECK(!value);
-    value = label.ids->toOneHotSparseMatrix(output.getWidth(), useGpu_);
+  if (dynamic_cast<CpuSparseMatrix*>(label.value.get()) ||
+      dynamic_cast<GpuSparseMatrix*>(label.value.get())) {
+    outputG.multiBinaryLabelCrossEntropyBp(output, *label.value);
   } else {
-    CHECK(label.value);
-    value = label.value;
-  }
-
-  if (dynamic_cast<CpuSparseMatrix*>(value.get()) ||
-      dynamic_cast<GpuSparseMatrix*>(value.get())) {
-    outputG.multiBinaryLabelCrossEntropyBp(output, *value);
-  } else {
-    outputG.binaryLabelCrossEntropyBp(output, *value);
+    outputG.binaryLabelCrossEntropyBp(output, *label.value);
   }
 }
 
@@ -523,10 +509,8 @@ void HuberTwoClass::forwardImp(Matrix &output, Argument &label,
                                Matrix &cost) {
   if (useGpu_) {
     for (size_t i = 0; i < inputLayers_.size(); i++) {
-      tmpCpuInput_[i].resizeAndCopyFrom(
-          getInput(i), false, HPPL_STREAM_DEFAULT);
+      tmpCpuInput_[i].resizeAndCopyFrom(getInput(i), false, HPPL_STREAM_1);
     }
-    hl_stream_synchronize(HPPL_STREAM_DEFAULT);
   }
   forwardImpIn(output, label, cost);
 }
@@ -579,40 +563,5 @@ void HuberTwoClass::backwardImpIn(
       grad[i] += -2 * (1 - y * out[i]) * y;
   }
 }
-
-/**
- * This cost layer compute the sum of its input as loss.
- * \f[
- * o(i) = \sum_{j=1}^D y_{ij}
- * \f]
- */
-class SumCostLayer : public Layer {
-public:
-  explicit SumCostLayer(const LayerConfig& config) : Layer(config) {}
-
-  bool init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
-    bool ret = Layer::init(layerMap, parameterMap);
-    if (!ret) return ret;
-    CHECK_EQ(inputLayers_.size(), 1UL);
-    return true;
-  }
-
-  virtual void forward(PassType passType) {
-    Layer::forward(passType);
-    const MatrixPtr& input = getInputValue(0);
-
-    /* malloc memory for the output_ if necessary */
-    int batchSize = input->getHeight();
-    int size = 1;
-    resizeOutput(batchSize, size);
-    output_.value->sumRows(*input, /* scaleSum= */1, /* scaleDest= */0);
-  }
-
-  virtual void backward(const UpdateCallback& callback = nullptr) {
-    getInputGrad(0)->add((real)1);
-  }
-};
-
-REGISTER_LAYER(sum_cost, SumCostLayer);
 
 }  // namespace paddle

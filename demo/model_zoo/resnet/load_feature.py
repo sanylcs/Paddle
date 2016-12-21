@@ -17,10 +17,8 @@ import sys
 import cPickle
 import logging
 
-logging.basicConfig(
-    format='[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s')
+logging.basicConfig(format='[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s')
 logging.getLogger().setLevel(logging.INFO)
-
 
 def load_feature_c(file):
     """
@@ -32,14 +30,13 @@ def load_feature_c(file):
     f = open(file, 'r')
     for line in f:
         sample = []
-        for slot in line.strip().split(";"):
-            fea = [float(val) for val in slot.strip().split()]
+        for slot in line.strip().split(";"): 
+            fea = [float(val) for val in slot.strip().split()] 
             if fea:
                 sample.append(fea)
         features.append(sample)
     f.close()
     return features
-
 
 def load_feature_py(feature_dir):
     """
@@ -57,7 +54,6 @@ def load_feature_py(feature_dir):
             logging.info('Load feature file %s', file_name)
     return features
 
-
 if __name__ == '__main__':
-    print load_feature_py(sys.argv[1])
+    print load_feature_py(sys.argv[1]) 
     #print load_feature_c(sys.argv[1]) 

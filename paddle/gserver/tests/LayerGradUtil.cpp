@@ -92,6 +92,7 @@ void testState(LayerPtr testLayer, vector<DataLayerPtr>& dataLayers,
     testLayer->forward(PASS_TEST);
     Argument out;
     out.resizeAndCopyFrom(testLayer->getOutput(), /* useGpu= */ false);
+    hl_stream_synchronize(HPPL_STREAM_DEFAULT);
     if (batchOut.value) {
       size_t dim = batchOut.value->getWidth();
       ASSERT_TRUE((bool)out.value);
@@ -219,6 +220,7 @@ void testBatchState(LayerPtr testLayer, vector<DataLayerPtr>& dataLayers,
     testLayer->forward(PASS_TEST);
     Argument out;
     out.resizeAndCopyFrom(testLayer->getOutput(), /* useGpu= */ false);
+    hl_stream_synchronize(HPPL_STREAM_DEFAULT);
     if (batchOut.value) {
       size_t dim = batchOut.value->getWidth();
       ASSERT_TRUE((bool)out.value);
@@ -669,14 +671,12 @@ void testLayerGrad(TestConfig testConf, string testLayerName, size_t batchSize,
 
 void testProjectionGrad(ProjectionConfig conf, InputType inputType,
                         size_t parameterSize, size_t batchSize, bool useGpu,
-                        bool testState, int biasSize, bool sharedBias) {
+                        bool testState) {
   TestConfig config;
   conf.set_name(conf.type());
   config.layerConfig.set_type("mixed");
   config.layerConfig.set_size(conf.output_size());
-  config.biasSize = biasSize == 0 ? config.layerConfig.size() : biasSize;
-  config.layerConfig.set_bias_size(config.biasSize);
-  config.layerConfig.set_shared_biases(sharedBias);
+  config.biasSize = config.layerConfig.size();
   config.inputDefs.push_back(
       {inputType, "layer_0", conf.input_size(), parameterSize});
   *config.layerConfig.add_inputs()->mutable_proj_conf() = conf;

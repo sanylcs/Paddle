@@ -14,7 +14,6 @@ limitations under the License. */
 
 
 #include "PaddleAPI.h"
-#include "PaddleAPIPrivate.h"
 #include "paddle/parameter/ParameterOptimizer.h"
 #include "Internal.h"
 #include <algorithm>
@@ -61,9 +60,10 @@ ParameterOptimizer::~ParameterOptimizer() {
 
 ParameterOptimizer* ParameterOptimizer::create(OptimizationConfig* config) {
   CHECK(config != nullptr);
+  auto opt_config_ptr = (paddle::OptimizationConfig*)config->getRawPtr();
   auto retOptimizer = new ParameterOptimizer();
   retOptimizer->m->optimizer.reset(
-      paddle::ParameterOptimizer::create(config->m->getConfig(), false));
+      paddle::ParameterOptimizer::create(*opt_config_ptr, false));
   return retOptimizer;
 }
 

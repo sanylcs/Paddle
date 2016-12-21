@@ -14,8 +14,16 @@ limitations under the License. */
 
 
 #include "PaddleAPI.h"
-#include "PaddleAPIPrivate.h"
 #include "paddle/trainer/Trainer.h"
+
+struct TrainerConfigPrivate {
+  std::shared_ptr<paddle::TrainerConfig> conf;
+  TrainerConfigPrivate() : conf(std::make_shared<paddle::TrainerConfig>()) {}
+};
+
+struct ModelConfigPrivate {
+  std::shared_ptr<paddle::TrainerConfig> conf;
+};
 
 struct ParameterConfigPrivate {
   paddle::ParameterPtr parameter;
@@ -31,6 +39,19 @@ struct ParameterConfigPrivate {
   }
 };
 
+struct OptimizationConfigPrivate {
+  std::shared_ptr<paddle::TrainerConfig> trainer_config;
+  paddle::OptimizationConfig config;
+
+  paddle::OptimizationConfig& getConfig() {
+    if (trainer_config != nullptr) {
+      return *trainer_config->mutable_opt_config();
+    } else {
+      return config;
+    }
+  }
+};
+
 TrainerConfig::TrainerConfig() : m(new TrainerConfigPrivate()) {}
 
 TrainerConfig::~TrainerConfig() { delete m; }
@@ -38,19 +59,10 @@ TrainerConfig::~TrainerConfig() { delete m; }
 TrainerConfig* TrainerConfig::createFromTrainerConfigFile(
     const std::string& confPath) {
   LOG(INFO) << "load trainer config from " << confPath;
-  auto conf = std::make_shared<paddle::TrainerConfigHelper>(confPath);
+  paddle::TrainerConfigHelper helper(confPath);
+  //! TODO(yuyang18): Make TrainerConfigPrivate to TrainerConfigHelper
   auto retv = new TrainerConfig();
-  retv->m->conf = conf;
-  return retv;
-}
-
-TrainerConfig* TrainerConfig::createFromProtoString(
-    const std::string& str) {
-  auto retv = new TrainerConfig();
-  paddle::TrainerConfig trainerConfigProto;
-  auto conf = std::make_shared<paddle::TrainerConfigHelper>(trainerConfigProto);
-  CHECK(conf->getMutableConfig().ParseFromString(str));
-  retv->m->conf = conf;
+  *retv->m->conf = helper.getConfig();
   return retv;
 }
 
@@ -62,6 +74,10 @@ ModelConfig* TrainerConfig::getModelConfig() const {
   auto retv = new ModelConfig();
   retv->m->conf = m->conf;
   return retv;
+}
+
+void* ModelConfig::getPaddleModelConfig() const {
+  return m->conf->mutable_model_config();
 }
 
 ParameterConfig::ParameterConfig() : m(new ParameterConfigPrivate()) {}
@@ -115,6 +131,8 @@ OptimizationConfig* TrainerConfig::getOptimizationConfig() const {
   opt_config->m->trainer_config = m->conf;
   return opt_config;
 }
+
+void* OptimizationConfig::getRawPtr() { return &m->getConfig(); }
 
 OptimizationConfig* OptimizationConfig::createFromProtoString(
     const std::string& str) {

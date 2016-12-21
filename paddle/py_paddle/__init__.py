@@ -15,10 +15,9 @@
 from util import DataProviderWrapperConverter
 from dataprovider_converter import DataProviderConverter
 
-__all__ = [
-    'paddle',
-    'DataProviderConverter',
-    'DataProviderWrapperConverter',  # for deprecated usage.
-    'loadParameterFile'
-]
+__all__ = ['paddle',
+           'DataProviderConverter',
+           'DataProviderWrapperConverter',  # for deprecated usage.
+           'loadParameterFile']
 util.monkeypatches()
+

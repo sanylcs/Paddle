@@ -15,7 +15,6 @@ limitations under the License. */
 
 #pragma once
 #include <string>
-#include <vector>
 
 namespace paddle {
 
@@ -33,7 +32,6 @@ struct Argument;
 class ActivationFunction {
 public:
   static ActivationFunction* create(const std::string& type);
-  static std::vector<std::string> getAllRegisteredTypes();
 
   ActivationFunction() {}
 

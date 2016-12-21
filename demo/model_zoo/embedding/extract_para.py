@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 """
 Example:
     python extract_para.py --preModel PREMODEL --preDict PREDICT \
@@ -27,7 +28,6 @@ Options:
 """
 from optparse import OptionParser
 import struct
-
 
 def get_row_index(preDict, usrDict):
     """
@@ -47,9 +47,7 @@ def get_row_index(preDict, usrDict):
             pos.append(index[word])
     return pos
 
-
-def extract_parameters_by_usrDict(preModel, preDict, usrModel, usrDict,
-                                  paraDim):
+def extract_parameters_by_usrDict(preModel, preDict, usrModel, usrDict, paraDim):
     """
     Extract desired parameters from a pretrained embedding model based on user dictionary
     """
@@ -72,7 +70,6 @@ def extract_parameters_by_usrDict(preModel, preDict, usrModel, usrDict,
     print "extract parameters finish, total", len(rowIndex), "lines"
     fi.close()
 
-
 def main():
     """
     Main entry for running paraconvert.py 
@@ -81,33 +78,19 @@ def main():
             "python %prog --preModel PREMODEL --preDict PREDICT" \
             " --usrModel USRMODEL --usrDict USRDICT -d DIM"
     parser = OptionParser(usage)
-    parser.add_option(
-        "--preModel",
-        action="store",
-        dest="preModel",
-        help="the name of pretrained embedding model")
-    parser.add_option(
-        "--preDict",
-        action="store",
-        dest="preDict",
-        help="the name of pretrained dictionary")
-    parser.add_option(
-        "--usrModel",
-        action="store",
-        dest="usrModel",
-        help="the name of output usr embedding model")
-    parser.add_option(
-        "--usrDict",
-        action="store",
-        dest="usrDict",
-        help="the name of user specified dictionary")
-    parser.add_option(
-        "-d", action="store", dest="dim", help="dimension of parameter")
+    parser.add_option("--preModel", action="store", dest="preModel",
+                      help="the name of pretrained embedding model")
+    parser.add_option("--preDict", action="store", dest="preDict",
+                      help="the name of pretrained dictionary")
+    parser.add_option("--usrModel", action="store", dest="usrModel",
+                      help="the name of output usr embedding model")
+    parser.add_option("--usrDict", action="store", dest="usrDict",
+                      help="the name of user specified dictionary")
+    parser.add_option("-d", action="store", dest="dim",
+                      help="dimension of parameter")
     (options, args) = parser.parse_args()
-    extract_parameters_by_usrDict(options.preModel, options.preDict,
-                                  options.usrModel, options.usrDict,
-                                  int(options.dim))
-
+    extract_parameters_by_usrDict(options.preModel, options.preDict, 
+                      options.usrModel, options.usrDict, int(options.dim))
 
 if __name__ == '__main__':
     main()

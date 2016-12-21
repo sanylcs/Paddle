@@ -15,7 +15,7 @@ limitations under the License. */
 
 #pragma once
 
-#include "SequencePoolLayer.h"
+#include "Layer.h"
 #include "paddle/math/Matrix.h"
 #include "paddle/utils/ThreadLocal.h"
 
@@ -24,30 +24,29 @@ namespace paddle {
 /**
  * A layer for "internal max" for sequence input.
  * Input: one or more sequences. Each sequence contains some instances.
- * If SequenceLevel = kNonSeq:
+ * If MaxLevel = kNonSeq:
  *    Output: output size is the number of input sequences (NOT input instances)
  *    output[i] = max_{for each instance in this sequence}{input[i]}
- * If SequenceLevel = kSeq:
+ * If MaxLevel = kSeq:
  *    Check input sequence must has sub-sequence
  *    Output: output size is the number of input sub-sequences
  *    output[i] = max_{for each instance in this sub-sequence}{input[i]}
- *
- * The config file api is pooling_layer.
  */
 
-class MaxLayer : public SequencePoolLayer {
+class MaxLayer : public Layer {
 protected:
+  std::unique_ptr<Weight> biases_;
   // maxIndex_[i][j] = k : the value at (i, j) is from input[k].
   IVectorPtr maxIndex_;
+  int type_;
 
 public:
-  explicit MaxLayer(const LayerConfig& config) : SequencePoolLayer(config) {}
+  explicit MaxLayer(const LayerConfig& config) : Layer(config) {}
+  enum MaxLevel {kNonSeq = 0, kSeq = 1 };
 
   ~MaxLayer() {}
 
-  bool init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
-    return SequencePoolLayer::init(layerMap, parameterMap);
-  }
+  bool init(const LayerMap& layerMap, const ParameterMap& parameterMap);
 
   void forward(PassType passType);
   void backward(const UpdateCallback& callback = nullptr);
