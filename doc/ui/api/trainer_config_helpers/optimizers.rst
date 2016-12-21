@@ -1,7 +1,17 @@
+==========
+Optimizers
+==========
+
 BaseSGDOptimizer
 ================
 ..  automodule:: paddle.trainer_config_helpers.optimizers
     :members: BaseSGDOptimizer
+    :noindex:
+
+MomentumOptimizer
+=================
+..  automodule:: paddle.trainer_config_helpers.optimizers
+    :members: MomentumOptimizer
     :noindex:
 
 AdamOptimizer
@@ -45,4 +55,3 @@ settings
 ..  automodule:: paddle.trainer_config_helpers.optimizers
     :members: settings
     :noindex:
-

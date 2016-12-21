@@ -7,6 +7,9 @@ add_subdirectory(pserver)
 add_subdirectory(trainer)
 add_subdirectory(scripts)
 
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/setup.py.in
+    ${CMAKE_CURRENT_SOURCE_DIR}/setup.py)
+
 if(WITH_PREDICT_SDK)
     add_subdirectory(predict)
 endif()
@@ -14,5 +17,3 @@ endif()
 if(WITH_SWIG_PY)
   add_subdirectory(api)
 endif()
-
-

@@ -1,4 +1,4 @@
-# Quick Start Tutorial
+# Quick Start
 
 This tutorial will teach the basics of deep learning (DL), including how to implement many different models in PaddlePaddle. You will learn how to:
   - Prepare data into the standardized format that PaddlePaddle accepts.
@@ -59,7 +59,7 @@ To build your text classification system, your code will need to perform five st
 ## Preprocess data into standardized format
 In this example, you are going to use [Amazon electronic product review dataset](http://jmcauley.ucsd.edu/data/amazon/) to build a bunch of deep neural network models for text classification. Each text in this dataset is a product review. This dataset has two categories: “positive” and “negative”. Positive means the reviewer likes the product, while negative means the reviewer does not like the product.
 
-`demo/quick_start` provides scripts for downloading data and preprocessing data as shown below. The data process takes several minutes (about 3 minutes in our machine).
+`demo/quick_start` in the [source code](https://github.com/baidu/Paddle) provides scripts for downloading data and preprocessing data as shown below. The data process takes several minutes (about 3 minutes in our machine).
 
 ```bash
 cd demo/quick_start
@@ -134,7 +134,7 @@ def process(settings, file_name):
 You need to add a data provider definition `define_py_data_sources2` in our network configuration. This definition specifies:
 
 - The path of the training and testing data (`data/train.list`, `data/test.list`).
-- The location of the data provider file (`dataprovider_pow`).
+- The location of the data provider file (`dataprovider_bow`).
 - The function to call to get data. (`process`).
 - Additional arguments or data. Here it passes the path of word dictionary.
 
@@ -157,16 +157,14 @@ define_py_data_sources2(train_list='data/train.list',
                         obj="process",
                         args={"dictionary": word_dict})
 ```
-
-You can refer to the following link for more detailed examples
-: <a href = "../../ui/data_provider/python_case.html">Python Use Case</a>，The detailed documentation on data format is: <a href = "../../ui/api/py_data_provider_wrapper.html"> PyDataProviderWrapper</a>。
+You can refer to the following link for more detailed examples and data formats: <a href = "../../ui/data_provider/pydataprovider2.html">PyDataProvider2</a>.
 
 ## Network Architecture
 You will describe four kinds of network architectures in this section.
 <center> ![](./PipelineNetwork_en.jpg) </center>
 
 First, you will build a logistic regression model. Later, you will also get chance to build other more powerful network architectures.
-For more detailed documentation, you could refer to: <a href = "../../ui/api/trainer_config_helpers/layers_index.html">Layer documentation</a>。All configuration files are in `demo/quick_start` directory.
+For more detailed documentation, you could refer to: <a href = "../../ui/api/trainer_config_helpers/layers.html">layer documentation</a>. All configuration files are in `demo/quick_start` directory.
 
 ### Logistic Regression
 The architecture is illustrated in the following picture:
@@ -425,7 +423,7 @@ paddle train \
 
 mv rank-00000 result.txt
 ```
-There are several differences between training and inference network configurations.
+User can choose the best model base on the training log instead of model `output/pass-00003`. There are several differences between training and inference network configurations.
 - You do not need labels during inference.
 - Outputs need to be specified to the classification probability layer (the output of softmax layer), or the id of maximum probability (`max_id` layer). An example to output the id and probability is given in the code snippet.
 - batch_size = 1.
@@ -479,7 +477,7 @@ The scripts of data downloading, network configurations, and training scrips are
 <td class="left">Word embedding</td>
 <td class="left"> 15MB </td>
 <td class="left"> 8.484%</td>
-<td class="left">trainer_config.bow.py</td>
+<td class="left">trainer_config.emb.py</td>
 </tr>
 
 <tr>

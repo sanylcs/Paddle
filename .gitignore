@@ -1,2 +1,10 @@
 *.DS_Store
 build/
+*.user
+
+.vscode
+.idea
+.project
+.cproject
+.pydevproject
+Makefile

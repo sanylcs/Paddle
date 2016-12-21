@@ -20,6 +20,21 @@ add_unittest_without_exec(test_LayerGrad
 add_test(NAME test_LayerGrad
     COMMAND test_LayerGrad)
 
+add_unittest_without_exec(test_ActivationGrad
+    test_ActivationGrad.cpp
+    LayerGradUtil.cpp
+    TestUtil.cpp)
+add_test(NAME test_ActivationGrad
+    COMMAND test_ActivationGrad)
+################# test_ConvTrans #######################
+add_unittest_without_exec(test_ConvTrans
+    test_ConvTrans.cpp
+    LayerGradUtil.cpp
+    TestUtil.cpp)
+
+add_test(NAME test_ConvTrans
+    COMMAND test_ConvTrans)
+
 ################## test_Evaluator #######################
 add_unittest(test_Evaluator
     test_Evaluator.cpp
@@ -56,7 +71,6 @@ add_test(NAME test_RecurrentGradientMachine
     COMMAND .set_python_path.sh -d
             ${PROJ_ROOT}/python:${PROJ_ROOT}/paddle/gserver/tests
             ${CMAKE_CURRENT_BINARY_DIR}/test_RecurrentGradientMachine
-            --use_gpu=false
     WORKING_DIRECTORY ${PROJ_ROOT}/paddle)
 
 add_unittest_without_exec(test_NetworkCompare
